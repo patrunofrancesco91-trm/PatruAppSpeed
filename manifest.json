@@ -1,0 +1,9 @@
+{
+  "name": "Patruno Athlete Monitor",
+  "short_name": "Athlete Monitor",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f5f8fc",
+  "theme_color": "#0b3a6e",
+  "icons": []
+}
