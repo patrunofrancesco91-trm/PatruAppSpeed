@@ -140,3 +140,8 @@ body{background:radial-gradient(circle at top right,#fff0f2 0,#fff 32%,#fff8f9 1
  .comparisonMatrix{grid-template-columns:1fr 1fr}.comparisonMatrix>*:nth-child(4n){display:none}
  .authWrap{padding:12px;border-radius:14px}.rowActions{flex-direction:column}
 }
+
+/* Inline logo fix: no external image path required */
+.pstLogoSvg{display:block;width:260px;height:60px;max-width:100%;flex:0 0 auto}
+.authBrand .pstLogoSvg{width:320px;height:82px;margin:0 auto;background:#111;border-radius:14px;padding:8px}
+@media(max-width:760px){.pstLogoSvg{width:165px;height:46px}.brandText{display:none}.authBrand .pstLogoSvg{width:250px;height:70px}}
