@@ -3,20 +3,24 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b3a6e" />
+  <meta name="theme-color" content="#c8102e" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <title>Patruno Athlete Monitor</title>
+  <title>Patruno Speed Team</title>
   <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/png" href="assets/favicon.png" />
   <link rel="stylesheet" href="styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
 </head>
 <body>
   <header class="topbar">
-    <div>
-      <h1>Patruno Athlete Monitor</h1>
-      <p>Velocità & Ostacoli</p>
+    <div class="brandWrap">
+      <img class="brandLogo" src="assets/logo.png" alt="Patruno Speed Team">
+      <div class="brandText">
+        <h1>Patruno Speed Team</h1>
+        <p>Performance Monitoring App · Velocità & Ostacoli</p>
+      </div>
     </div>
     <div id="headerUser" class="headerUser hidden"></div>
   </header>
@@ -24,7 +28,11 @@
   <main>
     <section id="authView" class="authWrap">
       <div class="card authCard">
-        <h2>Accedi</h2>
+        <div class="authBrand">
+          <img src="assets/logo.png" alt="Patruno Speed Team">
+          <h2>Accedi</h2>
+          <p class="muted">Speed · Data · Progress</p>
+        </div>
         <p class="muted">Usa l'account assegnato dall'allenatore.</p>
         <form id="loginForm">
           <label>Email<input id="loginEmail" type="email" required autocomplete="email"></label>

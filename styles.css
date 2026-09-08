@@ -112,3 +112,31 @@ select option{background:#fff;color:#231f20}
 /* V3.2 */
 .dangerBtn{background:#fff0f2!important;color:#a40020!important;border:1px solid #efb6c0!important;padding:7px 10px!important}
 .dangerBtn:hover{background:#a40020!important;color:#fff!important}
+
+/* V3.3 — Patruno Speed Team visual system */
+:root{--ink:#151515;--charcoal:#22252a}
+body{background:radial-gradient(circle at top right,#fff0f2 0,#fff 32%,#fff8f9 100%)}
+.topbar{padding:9px 18px;background:linear-gradient(100deg,#111 0,#2b0b10 34%,#c8102e 100%);min-height:76px}
+.brandWrap{display:flex;align-items:center;gap:12px;min-width:0}.brandLogo{height:58px;width:170px;object-fit:cover;object-position:left top;border-radius:7px;mix-blend-mode:screen}
+.brandText h1{font-size:1.2rem;letter-spacing:.02em}.brandText p{letter-spacing:.05em;text-transform:uppercase;font-size:.68rem}
+.authWrap{background:linear-gradient(rgba(10,10,10,.68),rgba(75,0,12,.67)),url("assets/hero.jpg") center/cover;border-radius:22px;min-height:76vh;padding:28px}
+.authCard{backdrop-filter:blur(14px);background:rgba(255,255,255,.95);border:1px solid rgba(255,255,255,.6)}
+.authBrand{text-align:center}.authBrand img{width:min(280px,90%);max-height:120px;object-fit:cover;object-position:left top;border-radius:12px}.authBrand h2{margin:8px 0 2px;font-size:1.6rem}
+.card{border-radius:18px;box-shadow:0 9px 34px rgba(60,0,10,.08)}
+.tabs{top:76px;padding:11px 4px}.tabBtn{border-radius:999px;padding:10px 15px}
+.dashboardHero{display:grid;grid-template-columns:1.15fr .85fr;padding:0;overflow:hidden;background:linear-gradient(120deg,#111,#4b0712 72%,#c8102e);color:#fff;min-height:210px}
+.dashboardHero>div{padding:28px}.dashboardHero h2{font-size:2rem;margin:6px 0}.dashboardHero p{max-width:570px;color:#f6d9df}.dashboardHero img{width:100%;height:100%;min-height:210px;object-fit:cover;mask-image:linear-gradient(to right,transparent 0,#000 25%)}
+.eyebrow{font-size:.72rem;font-weight:800;letter-spacing:.18em;color:#ff8a9a}
+.dashboardDataGrid>.card{min-height:300px}
+.rowActions{display:flex;gap:6px;align-items:center}.editBtn{background:#fff4df!important;color:#8a5200!important;border:1px solid #f1ce8c!important;padding:7px 9px!important}.editBtn:hover{background:#8a5200!important;color:#fff!important}
+.modalOverlay{position:fixed;inset:0;background:rgba(10,10,12,.68);display:grid;place-items:center;padding:18px;z-index:100;backdrop-filter:blur(5px)}
+.editModal{width:min(680px,100%);max-height:90vh;overflow:auto;margin:0}.modalActions{display:flex;justify-content:flex-end;gap:9px;margin-top:16px}
+.compareShell{overflow:hidden}.compareFilters{margin:8px 0 14px}.narrowField{max-width:360px}
+.compareDirect{margin-top:14px}.comparisonMatrix{display:grid;grid-template-columns:1.1fr repeat(3,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:12px;overflow:hidden}.comparisonMatrix>*{background:#fff;padding:10px}.comparisonMatrix>span{font-weight:800;background:#fff5f6}.comparisonMatrix>b{background:#fff0f2;color:#790017}.comparisonMatrix strong{font-size:1rem}
+.tableWrap{border-radius:12px}thead th{font-size:.78rem;text-transform:uppercase;letter-spacing:.035em}
+@media(max-width:760px){
+ .brandLogo{width:105px;height:47px}.brandText h1{font-size:1rem}.brandText p{display:none}.topbar{padding:8px 10px}
+ .dashboardHero{grid-template-columns:1fr}.dashboardHero img{max-height:180px;mask-image:linear-gradient(to bottom,transparent 0,#000 35%)}.dashboardHero>div{padding:20px}
+ .comparisonMatrix{grid-template-columns:1fr 1fr}.comparisonMatrix>*:nth-child(4n){display:none}
+ .authWrap{padding:12px;border-radius:14px}.rowActions{flex-direction:column}
+}

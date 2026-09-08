@@ -8,10 +8,10 @@ const $=s=>document.querySelector(s);
 const authView=$("#authView"), appView=$("#appView"), view=$("#view"), tabs=$("#tabs"), headerUser=$("#headerUser");
 let currentUser=null, profile=null, athleteProfile=null, activeTab="home";
 
-const athleteTabs=["home","wellness","training","tests","races","performance","injuries","history","report"];
-const doctorTabs=["home","history","performance","injuries","report"];
-const coachTabs=["home","athletes","wellness","training","tests","races","performance","injuries","history","report","settings"];
-const labels={home:"Home",athletes:"Atleti",wellness:"Wellness",training:"Allenamento",tests:"Test",races:"Gare",performance:"Performance",injuries:"Infortuni",history:"Storico",report:"Report",settings:"Impostazioni"};
+const athleteTabs=["home","wellness","training","tests","races","performance","compare","injuries","history","report"];
+const doctorTabs=["home","compare","history","performance","injuries","report"];
+const coachTabs=["home","athletes","wellness","training","tests","races","performance","compare","injuries","history","report","settings"];
+const labels={home:"Dashboard",athletes:"Atleti",wellness:"Wellness",training:"Allenamento",tests:"Test",races:"Gare",performance:"Performance",compare:"Confronti",injuries:"Infortuni",history:"Storico",report:"Report",settings:"Impostazioni"};
 
 const DEFAULT_TRAINING_TYPES=["Accelerazioni","Tempo Run","Forza","Lanciati","V Max","Capacità lattacida","Potenza lattacida","Speed Endurance","Special Speed Endurance","Ostacoli / Tecnica ostacoli","Tecnica di corsa","Pliometria","Recupero / Rigenerazione","Gara","Altro"];
 const DEFAULT_TESTS=[
@@ -66,7 +66,7 @@ function renderTabs(){
  tabs.querySelectorAll("button").forEach(b=>b.onclick=async()=>{activeTab=b.dataset.tab;renderTabs();await render()});
 }
 async function render(){
- const fn={home:renderHome,athletes:renderAthletes,wellness:renderWellness,training:renderTraining,tests:renderTests,races:renderRaces,performance:renderPerformance,injuries:renderInjuries,history:renderHistory,report:renderReport,settings:renderSettings}[activeTab];
+ const fn={home:renderHome,athletes:renderAthletes,wellness:renderWellness,training:renderTraining,tests:renderTests,races:renderRaces,performance:renderPerformance,compare:renderCompare,injuries:renderInjuries,history:renderHistory,report:renderReport,settings:renderSettings}[activeTab];
  await fn();
 }
 const stat=(l,v)=>`<div class="stat"><span>${l}</span><b>${v}</b></div>`;
@@ -85,6 +85,66 @@ async function deleteCoachRecord(table,id,rerender,label="dato"){
  if(error)return toast(error.message);
  toast("Dato eliminato");
  await rerender();
+}
+
+function openEditModal(title,fields,onSave){
+ const old=document.getElementById("editModalOverlay");if(old)old.remove();
+ const fieldHTML=fields.map(f=>{
+   const v=f.value??"";
+   if(f.type==="textarea")return `<label>${f.label}<textarea id="edit_${f.key}">${v}</textarea></label>`;
+   if(f.type==="select")return `<label>${f.label}<select id="edit_${f.key}">${(f.options||[]).map(o=>`<option value="${o.value}" ${String(o.value)===String(v)?"selected":""}>${o.label}</option>`).join("")}</select></label>`;
+   return `<label>${f.label}<input id="edit_${f.key}" type="${f.type||"text"}" step="${f.step||"any"}" value="${String(v).replace(/"/g,"&quot;")}"></label>`;
+ }).join("");
+ const el=document.createElement("div");el.id="editModalOverlay";el.className="modalOverlay";
+ el.innerHTML=`<div class="editModal card"><div class="sectionTitle"><h2>${title}</h2><button class="modalClose secondary">✕</button></div><form id="editModalForm">${fieldHTML}<div class="modalActions"><button type="button" class="secondary modalCancel">Annulla</button><button class="primary">Salva modifiche</button></div></form></div>`;
+ document.body.appendChild(el);
+ const close=()=>el.remove();
+ el.querySelector(".modalClose").onclick=close;el.querySelector(".modalCancel").onclick=close;
+ el.onclick=e=>{if(e.target===el)close()};
+ el.querySelector("#editModalForm").onsubmit=async e=>{
+   e.preventDefault();
+   if(!confirm("Confermi la modifica?"))return;
+   const values={};fields.forEach(f=>values[f.key]=document.getElementById(`edit_${f.key}`).value);
+   const ok=await onSave(values);if(ok!==false)close();
+ };
+}
+async function editWellnessRecord(id,after){
+ const {data:x,error}=await sb.from("wellness").select("*").eq("id",id).single();if(error)return toast(error.message);
+ openEditModal("Modifica Wellness",[
+  {key:"sleep",label:"Sonno (1–5)",type:"number",value:x.sleep},{key:"fatigue",label:"Stanchezza (1–5)",type:"number",value:x.fatigue},
+  {key:"doms",label:"DOMS (1–5)",type:"number",value:x.doms},{key:"stress",label:"Stress (1–5)",type:"number",value:x.stress},
+  {key:"pain",label:"Dolore / problema",type:"textarea",value:x.pain||""}
+ ],async v=>{const {error}=await sb.from("wellness").update({sleep:+v.sleep,fatigue:+v.fatigue,doms:+v.doms,stress:+v.stress,pain:v.pain}).eq("id",id);if(error){toast(error.message);return false}toast("Wellness modificato");await after();});
+}
+async function editTrainingRecord(id,after){
+ const [{data:x,error},{data:types}]=await Promise.all([sb.from("trainings").select("*").eq("id",id).single(),sb.from("training_types").select("*").eq("active",true).order("name")]);if(error)return toast(error.message);
+ openEditModal("Modifica Allenamento",[
+  {key:"training_type_id",label:"Tipo seduta",type:"select",value:x.training_type_id,options:(types||[]).map(t=>({value:t.id,label:t.name}))},
+  {key:"duration_min",label:"Durata (min)",type:"number",value:x.duration_min},{key:"srpe",label:"sRPE CR10",type:"number",value:x.srpe},
+  {key:"work_done",label:"Lavoro svolto",type:"textarea",value:x.work_done||""},{key:"times_results",label:"Tempi / risultati",type:"textarea",value:x.times_results||""},
+  {key:"pain_post",label:"Dolore post",type:"textarea",value:x.pain_post||""},{key:"notes",label:"Note",type:"textarea",value:x.notes||""}
+ ],async v=>{const {error}=await sb.from("trainings").update({training_type_id:v.training_type_id,duration_min:+v.duration_min,srpe:+v.srpe,work_done:v.work_done,times_results:v.times_results,pain_post:v.pain_post,notes:v.notes}).eq("id",id);if(error){toast(error.message);return false}toast("Allenamento modificato");await after();});
+}
+async function editTestRecord(id,after){
+ const {data:x,error}=await sb.from("test_results").select("*,tests(name,unit,higher_better,attempts)").eq("id",id).single();if(error)return toast(error.message);
+ const vals=Array.isArray(x.values)?x.values:[];
+ const fields=vals.map((v,i)=>({key:`v${i}`,label:`Prova ${i+1} (${x.tests?.unit||""})`,type:"number",value:v}));
+ fields.push({key:"notes",label:"Note",type:"textarea",value:x.notes||""});
+ openEditModal(`Modifica Test — ${x.tests?.name||""}`,fields,async v=>{
+   const nv=vals.map((_,i)=>+v[`v${i}`]);const mean=avg(nv),best=x.tests?.higher_better?Math.max(...nv):Math.min(...nv);
+   const {error}=await sb.from("test_results").update({values:nv,mean_value:mean,best_value:best,notes:v.notes}).eq("id",id);
+   if(error){toast(error.message);return false}toast("Test modificato");await after();
+ });
+}
+async function editRaceRecord(id,after){
+ const {data:x,error}=await sb.from("races").select("*,race_types(name,unit,fields)").eq("id",id).single();if(error)return toast(error.message);
+ const fields=[{key:"race_date",label:"Data gara",type:"date",value:x.race_date},{key:"meeting",label:"Manifestazione",value:x.meeting||""},{key:"result",label:`Risultato (${x.race_types?.unit||""})`,type:"number",value:x.result}];
+ (x.race_types?.fields||[]).forEach(k=>fields.push({key:`extra_${k}`,label:cap(k),type:["note","intertempi","ritmica"].includes(k)?"textarea":"text",value:(x.extras||{})[k]||""}));
+ openEditModal(`Modifica Gara — ${x.race_types?.name||""}`,fields,async v=>{
+  const extras={...(x.extras||{})};(x.race_types?.fields||[]).forEach(k=>extras[k]=v[`extra_${k}`]);
+  const {error}=await sb.from("races").update({race_date:v.race_date,meeting:v.meeting,result:+v.result,extras}).eq("id",id);
+  if(error){toast(error.message);return false}toast("Gara modificata");await after();
+ });
 }
 async function getAthletes(){
  const q=await sb.from("athletes").select("*").eq("active",true).order("display_name");
@@ -112,10 +172,10 @@ async function renderHome(){
  } else {
    const aa=await getAthletes();
    const [{data:t},{data:w},{data:tr},{data:r}]=await Promise.all([
-    sb.from("trainings").select("id,session_load,athlete_id,recorded_at"),
-    sb.from("wellness").select("id,score,sleep,fatigue,doms,stress,pain,athlete_id,recorded_at"),
-    sb.from("test_results").select("id,athlete_id,mean_value,recorded_at,tests(name,higher_better)"),
-    sb.from("races").select("id,athlete_id,result,race_date,race_types(name)")
+    sb.from("trainings").select("id,session_load,duration_min,srpe,athlete_id,recorded_at,training_types(name)").order("recorded_at",{ascending:true}),
+    sb.from("wellness").select("id,score,sleep,fatigue,doms,stress,pain,athlete_id,recorded_at").order("recorded_at",{ascending:true}),
+    sb.from("test_results").select("id,athlete_id,mean_value,best_value,recorded_at,tests(name,unit,higher_better)").order("recorded_at",{ascending:true}),
+    sb.from("races").select("id,athlete_id,result,race_date,race_types(name,unit)").order("race_date",{ascending:true})
    ]);
    const alertRows=aa.map(a=>({athlete:a,alerts:buildAthleteAlerts(
       a,
@@ -130,13 +190,32 @@ async function renderHome(){
    <div class="card"><h2>Stato gruppo oggi</h2><div class="stats">${stat("🔴 Controllo",critical)}${stat("🟠 Attenzione",watch)}${stat("🟢 Regolari",Math.max(0,aa.length-critical-watch))}</div></div></div>
    <div class="card"><div class="sectionTitle"><div><h2>Atleti da controllare oggi</h2><p class="muted">Alert operativi basati sui dati registrati.</p></div><button class="secondary" id="enableNotifyHome">🔔 Notifiche</button></div>
    <div class="alertGrid">${alertRows.map(x=>coachAlertCard(x.athlete,x.alerts)).join("")}</div></div>
+   <div class="dashboardHero card"><div><span class="eyebrow">PATRUNO SPEED TEAM</span><h2>Speed · Data · Progress</h2><p>Una vista unica per leggere carico, wellness e prestazione del gruppo.</p></div><img src="assets/hero.jpg" alt="Sprint Patruno Speed Team"></div>
+   ${dashboardAnalytics(aa,t||[],w||[],tr||[])}
    <div class="card"><h2>Carico totale registrato</h2><div class="kpi">${(t||[]).reduce((s,x)=>s+Number(x.session_load||0),0)} AU</div></div>`;
    document.querySelectorAll("[data-hist]").forEach(b=>b.onclick=async()=>{sessionStorage.setItem("historyAthlete",b.dataset.hist);activeTab="history";renderTabs();await render()});
+   document.querySelectorAll("[data-go-compare]").forEach(b=>b.onclick=async()=>{sessionStorage.setItem("compareSection",b.dataset.goCompare);activeTab="compare";renderTabs();await render()});
    if($("#enableNotifyHome")) $("#enableNotifyHome").onclick=enableNotifications;
    await maybeNotifyCoach(alertRows);
  }
 }
 
+
+function athleteNameById(aa,id){return aa.find(a=>a.id===id)?.display_name||"—"}
+function dashboardAnalytics(aa,t,w,tr){
+ const cutoff=daysAgo(14), recentT=t.filter(x=>new Date(x.recorded_at)>=cutoff), recentW=w.filter(x=>new Date(x.recorded_at)>=daysAgo(7)), recentTests=tr.slice(-12).reverse();
+ const byDay={};recentT.forEach(x=>{const k=new Date(x.recorded_at).toLocaleDateString("it-IT",{day:"2-digit",month:"2-digit"});byDay[k]=(byDay[k]||0)+Number(x.session_load||0)});
+ const avgWell=recentW.length?avg(recentW.map(x=>Number(x.score||0))):0;
+ return `<div class="grid two dashboardDataGrid">
+   <div class="card"><div class="sectionTitle"><div><h2>Training Load · 14 giorni</h2><p class="muted">Carico totale del gruppo giorno per giorno.</p></div><button class="secondary" data-go-compare="training">Confronta</button></div>${simpleBarChart(Object.entries(byDay).map(([label,value])=>({label,value})),"","AU")}</div>
+   <div class="card"><div class="sectionTitle"><div><h2>Wellness · 7 giorni</h2><p class="muted">Media gruppo: <b>${avgWell.toFixed(1)}/20</b></p></div><button class="secondary" data-go-compare="wellness">Confronta</button></div>
+    <div class="tableWrap"><table><thead><tr><th>Atleta</th><th>Ultimo score</th><th>Dolore</th></tr></thead><tbody>${aa.map(a=>{const x=[...w].filter(q=>q.athlete_id===a.id).sort((a,b)=>new Date(b.recorded_at)-new Date(a.recorded_at))[0];return `<tr><td><b>${a.display_name}</b></td><td>${x?`${x.score}/20`:"—"}</td><td>${x?.pain||"—"}</td></tr>`}).join("")}</tbody></table></div></div>
+   <div class="card"><div class="sectionTitle"><div><h2>Ultimi allenamenti</h2><p class="muted">Confrontabili direttamente nella nuova area Confronti.</p></div><button class="secondary" data-go-compare="training">Apri confronti</button></div>
+    <div class="tableWrap"><table><thead><tr><th>Atleta</th><th>Data</th><th>Seduta</th><th>Durata</th><th>sRPE</th><th>TL</th></tr></thead><tbody>${[...t].slice(-12).reverse().map(x=>`<tr><td>${athleteNameById(aa,x.athlete_id)}</td><td>${fmt(x.recorded_at)}</td><td>${x.training_types?.name||"—"}</td><td>${x.duration_min}′</td><td>${x.srpe}</td><td><b>${x.session_load} AU</b></td></tr>`).join("")||'<tr><td colspan="6">Nessun dato</td></tr>'}</tbody></table></div></div>
+   <div class="card"><div class="sectionTitle"><div><h2>Ultimi test</h2><p class="muted">Risultati recenti del gruppo.</p></div><button class="secondary" data-go-compare="tests">Confronta</button></div>
+    <div class="tableWrap"><table><thead><tr><th>Atleta</th><th>Test</th><th>Risultato</th><th>Data</th></tr></thead><tbody>${recentTests.map(x=>`<tr><td>${athleteNameById(aa,x.athlete_id)}</td><td>${x.tests?.name||"—"}</td><td><b>${Number(x.mean_value).toFixed(2)} ${x.tests?.unit||""}</b></td><td>${fmt(x.recorded_at)}</td></tr>`).join("")||'<tr><td colspan="4">Nessun dato</td></tr>'}</tbody></table></div></div>
+ </div>`;
+}
 function startOfDay(d=new Date()){const x=new Date(d);x.setHours(0,0,0,0);return x}
 function buildAthleteAlerts(athlete,wellness,trainings,tests,races){
  const items=[];
@@ -209,7 +288,7 @@ async function maybeNotifyCoach(rows){
  if(!critical.length)return;
  const key="pam-alert-"+new Date().toISOString().slice(0,10)+"-"+critical.map(x=>x.athlete.id).sort().join("-");
  if(localStorage.getItem("pamLastAlertNotification")===key)return;
- await showLocalNotification("Patruno Athlete Monitor",`${critical.length} atleta/i con alert rosso da controllare oggi`,"coach-alert");
+ await showLocalNotification("Patruno Speed Team",`${critical.length} atleta/i con alert rosso da controllare oggi`,"coach-alert");
  localStorage.setItem("pamLastAlertNotification",key);
 }
 
@@ -267,8 +346,8 @@ async function renderRecentWellness(){
  let q=sb.from("wellness").select("*,athletes(display_name)").order("recorded_at",{ascending:false}).limit(10);
  if(profile.role==="athlete") q=q.eq("athlete_id",athleteProfile.id);
  const {data}=await q;
- $("#wellRecent").innerHTML=recentCard("Ultimi wellness",(data||[]).map(x=>[fmt(x.recorded_at),x.athletes?.display_name||"",`Score ${x.score}/20`,x.pain||"",canCoachEdit()?`<button class="dangerBtn" data-del-well="${x.id}">Elimina</button>`:""]));
- if(canCoachEdit()) document.querySelectorAll("[data-del-well]").forEach(b=>b.onclick=()=>deleteCoachRecord("wellness",b.dataset.delWell,renderRecentWellness,"wellness"));
+ $("#wellRecent").innerHTML=recentCard("Ultimi wellness",(data||[]).map(x=>[fmt(x.recorded_at),x.athletes?.display_name||"",`Score ${x.score}/20`,x.pain||"",canCoachEdit()?`<div class="rowActions"><button class="editBtn" data-edit-well="${x.id}">✏️ Modifica</button><button class="dangerBtn" data-del-well="${x.id}">Elimina</button></div>`:""]));
+ if(canCoachEdit()){document.querySelectorAll("[data-edit-well]").forEach(b=>b.onclick=()=>editWellnessRecord(b.dataset.editWell,renderRecentWellness));document.querySelectorAll("[data-del-well]").forEach(b=>b.onclick=()=>deleteCoachRecord("wellness",b.dataset.delWell,renderRecentWellness,"wellness"));}
 }
 
 async function getTrainingTypes(){
@@ -308,8 +387,8 @@ async function renderRecentTraining(){
  let q=sb.from("trainings").select("*,athletes(display_name),training_types(name)").order("recorded_at",{ascending:false}).limit(10);
  if(profile.role==="athlete") q=q.eq("athlete_id",athleteProfile.id);
  const {data}=await q;
- $("#trainRecent").innerHTML=recentCard("Ultimi allenamenti",(data||[]).map(x=>[fmt(x.recorded_at),x.athletes?.display_name||"",x.training_types?.name||"",`${x.duration_min} min · RPE ${x.srpe} · ${x.session_load} AU`,canCoachEdit()?`<button class="dangerBtn" data-del-training="${x.id}">Elimina</button>`:""]));
- if(canCoachEdit()) document.querySelectorAll("[data-del-training]").forEach(b=>b.onclick=()=>deleteCoachRecord("trainings",b.dataset.delTraining,renderRecentTraining,"allenamento"));
+ $("#trainRecent").innerHTML=recentCard("Ultimi allenamenti",(data||[]).map(x=>[fmt(x.recorded_at),x.athletes?.display_name||"",x.training_types?.name||"",`${x.duration_min} min · RPE ${x.srpe} · ${x.session_load} AU`,canCoachEdit()?`<div class="rowActions"><button class="editBtn" data-edit-training="${x.id}">✏️ Modifica</button><button class="dangerBtn" data-del-training="${x.id}">Elimina</button></div>`:""]));
+ if(canCoachEdit()){document.querySelectorAll("[data-edit-training]").forEach(b=>b.onclick=()=>editTrainingRecord(b.dataset.editTraining,renderRecentTraining));document.querySelectorAll("[data-del-training]").forEach(b=>b.onclick=()=>deleteCoachRecord("trainings",b.dataset.delTraining,renderRecentTraining,"allenamento"));}
 }
 
 async function getTests(){
@@ -342,8 +421,8 @@ async function renderRecentTests(){
  let q=sb.from("test_results").select("*,athletes(display_name),tests(name,unit)").order("recorded_at",{ascending:false}).limit(10);
  if(profile.role==="athlete") q=q.eq("athlete_id",athleteProfile.id);
  const {data}=await q;
- $("#testRecent").innerHTML=recentCard("Ultimi test",(data||[]).map(x=>[fmt(x.recorded_at),x.athletes?.display_name||"",x.tests?.name||"",`Media ${x.mean_value} · Best ${x.best_value} ${x.tests?.unit||""}`,canCoachEdit()?`<button class="dangerBtn" data-del-test="${x.id}">Elimina</button>`:""]));
- if(canCoachEdit()) document.querySelectorAll("[data-del-test]").forEach(b=>b.onclick=()=>deleteCoachRecord("test_results",b.dataset.delTest,renderRecentTests,"test"));
+ $("#testRecent").innerHTML=recentCard("Ultimi test",(data||[]).map(x=>[fmt(x.recorded_at),x.athletes?.display_name||"",x.tests?.name||"",`Media ${x.mean_value} · Best ${x.best_value} ${x.tests?.unit||""}`,canCoachEdit()?`<div class="rowActions"><button class="editBtn" data-edit-test="${x.id}">✏️ Modifica</button><button class="dangerBtn" data-del-test="${x.id}">Elimina</button></div>`:""]));
+ if(canCoachEdit()){document.querySelectorAll("[data-edit-test]").forEach(b=>b.onclick=()=>editTestRecord(b.dataset.editTest,renderRecentTests));document.querySelectorAll("[data-del-test]").forEach(b=>b.onclick=()=>deleteCoachRecord("test_results",b.dataset.delTest,renderRecentTests,"test"));}
 }
 
 async function getRaceTypes(){const {data}=await sb.from("race_types").select("*").eq("active",true).order("name");return data||[]}
@@ -366,8 +445,8 @@ async function renderRaces(){
 async function renderRecentRaces(){
  let q=sb.from("races").select("*,athletes(display_name),race_types(name,unit)").order("race_date",{ascending:false}).limit(10);
  if(profile.role==="athlete") q=q.eq("athlete_id",athleteProfile.id);
- const {data}=await q;$("#raceRecent").innerHTML=recentCard("Ultime gare",(data||[]).map(x=>[x.race_date,x.athletes?.display_name||"",x.race_types?.name||"",`${x.result} ${x.race_types?.unit||""}`,canCoachEdit()?`<button class="dangerBtn" data-del-race="${x.id}">Elimina</button>`:""]));
- if(canCoachEdit()) document.querySelectorAll("[data-del-race]").forEach(b=>b.onclick=()=>deleteCoachRecord("races",b.dataset.delRace,renderRecentRaces,"gara"));
+ const {data}=await q;$("#raceRecent").innerHTML=recentCard("Ultime gare",(data||[]).map(x=>[x.race_date,x.athletes?.display_name||"",x.race_types?.name||"",`${x.result} ${x.race_types?.unit||""}`,canCoachEdit()?`<div class="rowActions"><button class="editBtn" data-edit-race="${x.id}">✏️ Modifica</button><button class="dangerBtn" data-del-race="${x.id}">Elimina</button></div>`:""]));
+ if(canCoachEdit()){document.querySelectorAll("[data-edit-race]").forEach(b=>b.onclick=()=>editRaceRecord(b.dataset.editRace,renderRecentRaces));document.querySelectorAll("[data-del-race]").forEach(b=>b.onclick=()=>deleteCoachRecord("races",b.dataset.delRace,renderRecentRaces,"gara"));}
 }
 
 
@@ -520,6 +599,53 @@ async function drawTestProfile(id){
  <div class="profileGrid">${cards||'<div class="note">Nessun test registrato.</div>'}</div>`;
 }
 
+
+async function renderCompare(){
+ const aa=isStaff()?await getAthletes():[athleteProfile];
+ const savedSec=sessionStorage.getItem("compareSection")||"training";
+ view.innerHTML=`<div class="card compareShell"><div class="sectionTitle"><div><h2>Confronti</h2><p class="muted">Confronta direttamente allenamenti, Wellness e Test dello stesso atleta.</p></div><span class="badge redBadge">ANALISI</span></div>
+ <div class="grid three compareFilters">
+ ${isStaff()?`<label>Atleta<select id="cmpAth">${aa.map(a=>`<option value="${a.id}">${a.display_name}</option>`).join("")}</select></label>`:""}
+ <label>Area<select id="cmpSection"><option value="training" ${savedSec==="training"?"selected":""}>Allenamenti</option><option value="wellness" ${savedSec==="wellness"?"selected":""}>Wellness</option><option value="tests" ${savedSec==="tests"?"selected":""}>Test</option></select></label>
+ <label>Periodo<select id="cmpDays"><option value="7">7 giorni</option><option value="30" selected>30 giorni</option><option value="90">90 giorni</option><option value="0">Tutto</option></select></label>
+ </div><div id="compareBody"></div></div>`;
+ const athleteId=()=>isStaff()?$("#cmpAth").value:athleteProfile.id;
+ const draw=async()=>{
+   sessionStorage.setItem("compareSection",$("#cmpSection").value);
+   const sec=$("#cmpSection").value,days=+$("#cmpDays").value,id=athleteId();
+   if(sec==="training")await drawTrainingCompare(id,days);
+   if(sec==="wellness")await drawWellnessCompare(id,days);
+   if(sec==="tests")await drawTestCompare(id,days);
+ };
+ if(isStaff())$("#cmpAth").onchange=draw;$("#cmpSection").onchange=draw;$("#cmpDays").onchange=draw;await draw();
+}
+async function drawTrainingCompare(id,days){
+ const {data}=await sb.from("trainings").select("*,training_types(name)").eq("athlete_id",id).order("recorded_at",{ascending:true});
+ const all=filterByDays(data||[],days,"recorded_at"), types=[...new Set(all.map(x=>x.training_types?.name).filter(Boolean))];
+ $("#compareBody").innerHTML=`<div class="grid two"><label>Tipo allenamento<select id="cmpTrainType"><option value="">Tutti</option>${types.map(n=>`<option>${n}</option>`).join("")}</select></label><label>Metrica grafico<select id="cmpTrainMetric"><option value="session_load">Training Load (AU)</option><option value="srpe">sRPE</option><option value="duration_min">Durata (min)</option></select></label></div><div id="trainingCompareInner"></div>`;
+ const redraw=()=>{
+  const typ=$("#cmpTrainType").value,metric=$("#cmpTrainMetric").value,list=all.filter(x=>!typ||x.training_types?.name===typ);
+  const opts=list.map((x,i)=>`<option value="${x.id}">${new Date(x.recorded_at).toLocaleDateString("it-IT")} · ${x.training_types?.name||""} · TL ${x.session_load}</option>`).join("");
+  $("#trainingCompareInner").innerHTML=`${simpleLineChart(list.map(x=>({label:new Date(x.recorded_at).toLocaleDateString("it-IT",{day:"2-digit",month:"2-digit"}),value:Number(x[metric]||0)})),metric==="session_load"?"Training Load":metric==="srpe"?"sRPE":"Durata",metric==="session_load"?"AU":metric==="duration_min"?"min":"")}
+  <div class="card innerCard compareDirect"><h3>Confronto diretto di due sedute</h3><div class="grid two"><label>Seduta A<select id="cmpSessionA">${opts}</select></label><label>Seduta B<select id="cmpSessionB">${opts}</select></label></div><div id="directSessionCompare"></div></div>
+  <div class="tableWrap historyGrid"><table><thead><tr><th>Data</th><th>Tipo</th><th>Durata</th><th>sRPE</th><th>TL</th><th>Lavoro</th><th>Tempi</th></tr></thead><tbody>${list.slice().reverse().map(x=>`<tr><td>${fmt(x.recorded_at)}</td><td><b>${x.training_types?.name||""}</b></td><td>${x.duration_min} min</td><td>${x.srpe}</td><td><b>${x.session_load} AU</b></td><td>${x.work_done||"—"}</td><td>${x.times_results||"—"}</td></tr>`).join("")||'<tr><td colspan="7">Nessun allenamento</td></tr>'}</tbody></table></div>`;
+  const direct=()=>{const a=list.find(x=>x.id===$("#cmpSessionA")?.value),b=list.find(x=>x.id===$("#cmpSessionB")?.value);if(!a||!b)return;const d=(bv,av)=>av?((bv-av)/Math.abs(av))*100:null;$("#directSessionCompare").innerHTML=`<div class="comparisonMatrix"><div></div><b>Seduta A</b><b>Seduta B</b><b>Δ B vs A</b><span>Durata</span><strong>${a.duration_min} min</strong><strong>${b.duration_min} min</strong>${changeBadge(d(Number(b.duration_min),Number(a.duration_min)))}<span>sRPE</span><strong>${a.srpe}</strong><strong>${b.srpe}</strong>${changeBadge(d(Number(b.srpe),Number(a.srpe)))}<span>Training Load</span><strong>${a.session_load} AU</strong><strong>${b.session_load} AU</strong>${changeBadge(d(Number(b.session_load),Number(a.session_load)))}</div>`};
+  if($("#cmpSessionA")){$("#cmpSessionA").onchange=direct;$("#cmpSessionB").onchange=direct;if(list.length>1)$("#cmpSessionB").value=list.at(-1).id;direct()}
+ };
+ $("#cmpTrainType").onchange=redraw;$("#cmpTrainMetric").onchange=redraw;redraw();
+}
+async function drawWellnessCompare(id,days){
+ const {data}=await sb.from("wellness").select("*").eq("athlete_id",id).order("recorded_at",{ascending:true});
+ const all=filterByDays(data||[],days,"recorded_at");
+ $("#compareBody").innerHTML=`<label class="narrowField">Metrica<select id="cmpWellMetric"><option value="score">Score totale</option><option value="sleep">Sonno</option><option value="fatigue">Stanchezza</option><option value="doms">DOMS</option><option value="stress">Stress</option></select></label><div id="wellCmpInner"></div>`;
+ const draw=()=>{const m=$("#cmpWellMetric").value,u=m==="score"?"/20":"/5";$("#wellCmpInner").innerHTML=`${simpleLineChart(all.map(x=>({label:new Date(x.recorded_at).toLocaleDateString("it-IT",{day:"2-digit",month:"2-digit"}),value:Number(x[m]||0)})),"Wellness — "+$("#cmpWellMetric").selectedOptions[0].text,u)}<div class="tableWrap historyGrid"><table><thead><tr><th>Data</th><th>Sonno</th><th>Stanchezza</th><th>DOMS</th><th>Stress</th><th>Score</th><th>Dolore</th></tr></thead><tbody>${all.slice().reverse().map(x=>`<tr><td>${fmt(x.recorded_at)}</td><td>${x.sleep}</td><td>${x.fatigue}</td><td>${x.doms}</td><td>${x.stress}</td><td><b>${x.score}/20</b></td><td>${x.pain||"—"}</td></tr>`).join("")||'<tr><td colspan="7">Nessun dato</td></tr>'}</tbody></table></div>`};$("#cmpWellMetric").onchange=draw;draw();
+}
+async function drawTestCompare(id,days){
+ const {data}=await sb.from("test_results").select("*,tests(name,unit,higher_better)").eq("athlete_id",id).order("recorded_at",{ascending:true});
+ const all=filterByDays(data||[],days,"recorded_at"),names=[...new Set(all.map(x=>x.tests?.name).filter(Boolean))];
+ $("#compareBody").innerHTML=`<label class="narrowField">Test<select id="cmpTestName">${names.map(n=>`<option>${n}</option>`).join("")}</select></label><div id="testCmpInner"></div>`;
+ const draw=()=>{const name=$("#cmpTestName").value,list=all.filter(x=>x.tests?.name===name),meta=list[0]?.tests;$("#testCmpInner").innerHTML=`${simpleLineChart(list.map(x=>({label:new Date(x.recorded_at).toLocaleDateString("it-IT",{day:"2-digit",month:"2-digit"}),value:Number(x.mean_value)})),name,meta?.unit||"",!meta?.higher_better)}<div class="tableWrap historyGrid"><table><thead><tr><th>Data</th><th>Prove</th><th>Media</th><th>Best</th><th>Δ precedente</th></tr></thead><tbody>${list.slice().reverse().map((x,ri)=>{const originalIndex=list.findIndex(z=>z.id===x.id),prev=originalIndex>0?list[originalIndex-1]:null;return `<tr><td>${fmt(x.recorded_at)}</td><td>${(x.values||[]).join(" · ")}</td><td><b>${Number(x.mean_value).toFixed(2)} ${meta?.unit||""}</b></td><td>${Number(x.best_value).toFixed(2)}</td><td>${prev?changeBadge(pctChange(x.mean_value,prev.mean_value,!meta?.higher_better)):"—"}</td></tr>`}).join("")||'<tr><td colspan="5">Nessun dato</td></tr>'}</tbody></table></div>`};if($("#cmpTestName")){$("#cmpTestName").onchange=draw;draw()}else $("#testCmpInner").innerHTML='<div class="note">Nessun test nel periodo.</div>';
+}
 async function renderInjuries(){
  const aa=isStaff()?await getAthletes():[athleteProfile];
  const allFields=await getCustomFields("injury");
@@ -663,6 +789,16 @@ async function renderHistory(){
    if(section==="wellness") html+=historyWellness(filtered.wellness);
    $("#historyBody").innerHTML=html;
    bindHistoryDynamicControls(filtered);
+   if(canCoachEdit()){
+     document.querySelectorAll("[data-hist-edit-training]").forEach(b=>b.onclick=()=>editTrainingRecord(b.dataset.histEditTraining,async()=>{cache=null;await draw()}));
+     document.querySelectorAll("[data-hist-del-training]").forEach(b=>b.onclick=()=>deleteCoachRecord("trainings",b.dataset.histDelTraining,async()=>{cache=null;await draw()},"allenamento"));
+     document.querySelectorAll("[data-hist-edit-well]").forEach(b=>b.onclick=()=>editWellnessRecord(b.dataset.histEditWell,async()=>{cache=null;await draw()}));
+     document.querySelectorAll("[data-hist-del-well]").forEach(b=>b.onclick=()=>deleteCoachRecord("wellness",b.dataset.histDelWell,async()=>{cache=null;await draw()},"wellness"));
+     document.querySelectorAll("[data-hist-edit-test]").forEach(b=>b.onclick=()=>editTestRecord(b.dataset.histEditTest,async()=>{cache=null;await draw()}));
+     document.querySelectorAll("[data-hist-del-test]").forEach(b=>b.onclick=()=>deleteCoachRecord("test_results",b.dataset.histDelTest,async()=>{cache=null;await draw()},"test"));
+     document.querySelectorAll("[data-hist-edit-race]").forEach(b=>b.onclick=()=>editRaceRecord(b.dataset.histEditRace,async()=>{cache=null;await draw()}));
+     document.querySelectorAll("[data-hist-del-race]").forEach(b=>b.onclick=()=>deleteCoachRecord("races",b.dataset.histDelRace,async()=>{cache=null;await draw()},"gara"));
+   }
  }
  function bindHistoryDynamicControls(filtered){
    const testSel=$("#historyTestSelect");
@@ -726,8 +862,8 @@ function historyTraining(current,all,days){
  </div>
  ${days?`<div class="comparisonCard"><div><span class="muted">Periodo precedente</span><b>${Math.round(previousTL)} AU</b></div><div class="compareArrow">→</div><div><span class="muted">Periodo attuale</span><b>${Math.round(tl)} AU</b></div><div class="right">${previousTL===0&&tl>0?'<span class="badge ok">Nuovo carico</span>':changeBadge(delta)}</div></div>`:""}
  ${simpleBarChart(points,"Training Load giorno per giorno","AU")}
- <div class="tableWrap historyGrid"><table><thead><tr><th>Data</th><th>Tipo</th><th>Lavoro svolto</th><th>Tempi</th><th>Durata</th><th>sRPE</th><th>TL</th><th>Dolore</th></tr></thead><tbody>
- ${current.slice().reverse().map(x=>`<tr><td>${fmt(x.recorded_at)}</td><td><b>${x.training_types?.name||""}</b></td><td>${x.work_done||"—"}</td><td>${x.times_results||"—"}</td><td>${x.duration_min} min</td><td>${x.srpe}</td><td><b>${x.session_load} AU</b></td><td>${x.pain_post||"—"}</td></tr>`).join("")||'<tr><td colspan="8">Nessun allenamento nel periodo</td></tr>'}
+ <div class="tableWrap historyGrid"><table><thead><tr><th>Data</th><th>Tipo</th><th>Lavoro svolto</th><th>Tempi</th><th>Durata</th><th>sRPE</th><th>TL</th><th>Dolore</th>${canCoachEdit()?"<th>Azioni</th>":""}</tr></thead><tbody>
+ ${current.slice().reverse().map(x=>`<tr><td>${fmt(x.recorded_at)}</td><td><b>${x.training_types?.name||""}</b></td><td>${x.work_done||"—"}</td><td>${x.times_results||"—"}</td><td>${x.duration_min} min</td><td>${x.srpe}</td><td><b>${x.session_load} AU</b></td><td>${x.pain_post||"—"}</td>${canCoachEdit()?`<td><div class="rowActions"><button class="editBtn" data-hist-edit-training="${x.id}">✏️</button><button class="dangerBtn" data-hist-del-training="${x.id}">🗑️</button></div></td>`:""}</tr>`).join("")||'<tr><td colspan="9">Nessun allenamento nel periodo</td></tr>'}
  </tbody></table></div>`;
 }
 function historyTests(current,all){
@@ -741,12 +877,12 @@ function historyTests(current,all){
    const vals=list.map(y=>Number(y.mean_value)).filter(Number.isFinite);
    const pb=vals.length?(x.tests?.higher_better?Math.max(...vals):Math.min(...vals)):null;
    const isPB=pb!==null&&Math.abs(Number(x.mean_value)-pb)<1e-9;
-   return `<tr><td>${fmt(x.recorded_at)}</td><td><b>${x.tests?.name||""}</b></td><td>${Array.isArray(x.values)?x.values.join(" · "):""}</td><td>${Number(x.mean_value).toFixed(2)} ${x.tests?.unit||""}</td><td>${Number(x.best_value).toFixed(2)} ${x.tests?.unit||""}</td><td>${changeBadge(delta)}</td><td>${isPB?'<span class="badge ok">PB</span>':pb!==null?`${pb.toFixed(2)} ${x.tests?.unit||""}`:"—"}</td></tr>`;
+   return `<tr><td>${fmt(x.recorded_at)}</td><td><b>${x.tests?.name||""}</b></td><td>${Array.isArray(x.values)?x.values.join(" · "):""}</td><td>${Number(x.mean_value).toFixed(2)} ${x.tests?.unit||""}</td><td>${Number(x.best_value).toFixed(2)} ${x.tests?.unit||""}</td><td>${changeBadge(delta)}</td><td>${isPB?'<span class="badge ok">PB</span>':pb!==null?`${pb.toFixed(2)} ${x.tests?.unit||""}`:"—"}</td>${canCoachEdit()?`<td><div class="rowActions"><button class="editBtn" data-hist-edit-test="${x.id}">✏️</button><button class="dangerBtn" data-hist-del-test="${x.id}">🗑️</button></div></td>`:""}</tr>`;
  }).join("");
  const picker=names.length?`<div class="chartPicker"><label>Grafico test<select id="historyTestSelect">${names.map(n=>`<option value="${n}">${n}</option>`).join("")}</select></label></div><div id="historyTestChart">${testChartHTML(current,all,names[0])}</div>`:"";
  return `<div class="stats">${stat("Test nel periodo",current.length)}${stat("Tipi di test",names.length)}</div>
  ${picker}
- <div class="tableWrap historyGrid"><table><thead><tr><th>Data</th><th>Test</th><th>Prove</th><th>Media</th><th>Best prova</th><th>Δ vs precedente</th><th>PB</th></tr></thead><tbody>${grid||'<tr><td colspan="7">Nessun test nel periodo</td></tr>'}</tbody></table></div>`;
+ <div class="tableWrap historyGrid"><table><thead><tr><th>Data</th><th>Test</th><th>Prove</th><th>Media</th><th>Best prova</th><th>Δ vs precedente</th><th>PB</th>${canCoachEdit()?"<th>Azioni</th>":""}</tr></thead><tbody>${grid||'<tr><td colspan="7">Nessun test nel periodo</td></tr>'}</tbody></table></div>`;
 }
 function renderSelectedTestChart(current,all,name){
  const el=$("#historyTestChart");if(el)el.innerHTML=testChartHTML(current,all,name);
@@ -775,12 +911,12 @@ function historyRaces(current,all){
    const season=list.filter(y=>new Date(y.race_date).getFullYear()===year);
    const sb=season.length?Math.min(...season.map(y=>Number(y.result))):null;
    const ex=x.extras||{};
-   return `<tr><td>${x.race_date}</td><td><b>${name}</b></td><td>${x.meeting||"—"}</td><td><b>${x.result} ${x.race_types?.unit||""}</b></td><td>${ex.vento||"—"}</td><td>${ex.piazzamento||"—"}</td><td>${ex.turno||"—"}</td><td>${changeBadge(delta)}</td><td>${pb!==null&&Number(x.result)===pb?'<span class="badge ok">PB</span>':pb??"—"}</td><td>${sb!==null&&Number(x.result)===sb?'<span class="badge ok">SB</span>':sb??"—"}</td></tr>`;
+   return `<tr><td>${x.race_date}</td><td><b>${name}</b></td><td>${x.meeting||"—"}</td><td><b>${x.result} ${x.race_types?.unit||""}</b></td><td>${ex.vento||"—"}</td><td>${ex.piazzamento||"—"}</td><td>${ex.turno||"—"}</td><td>${changeBadge(delta)}</td><td>${pb!==null&&Number(x.result)===pb?'<span class="badge ok">PB</span>':pb??"—"}</td><td>${sb!==null&&Number(x.result)===sb?'<span class="badge ok">SB</span>':sb??"—"}</td>${canCoachEdit()?`<td><div class="rowActions"><button class="editBtn" data-hist-edit-race="${x.id}">✏️</button><button class="dangerBtn" data-hist-del-race="${x.id}">🗑️</button></div></td>`:""}</tr>`;
  }).join("");
  const picker=names.length?`<div class="chartPicker"><label>Grafico specialità<select id="historyRaceSelect">${names.map(n=>`<option value="${n}">${n}</option>`).join("")}</select></label></div><div id="historyRaceChart">${raceChartHTML(current,all,names[0])}</div>`:"";
  return `<div class="stats">${stat("Gare nel periodo",current.length)}${stat("Specialità",names.length)}${stat("Stagione",year)}</div>
  ${picker}
- <div class="tableWrap historyGrid"><table><thead><tr><th>Data</th><th>Specialità</th><th>Manifestazione</th><th>Risultato</th><th>Vento</th><th>Pos.</th><th>Turno</th><th>Δ</th><th>PB</th><th>SB</th></tr></thead><tbody>${grid||'<tr><td colspan="10">Nessuna gara nel periodo</td></tr>'}</tbody></table></div>`;
+ <div class="tableWrap historyGrid"><table><thead><tr><th>Data</th><th>Specialità</th><th>Manifestazione</th><th>Risultato</th><th>Vento</th><th>Pos.</th><th>Turno</th><th>Δ</th><th>PB</th><th>SB</th>${canCoachEdit()?"<th>Azioni</th>":""}</tr></thead><tbody>${grid||'<tr><td colspan="10">Nessuna gara nel periodo</td></tr>'}</tbody></table></div>`;
 }
 function renderSelectedRaceChart(current,all,name){
  const el=$("#historyRaceChart");if(el)el.innerHTML=raceChartHTML(current,all,name);
@@ -800,7 +936,7 @@ function historyWellness(current){
  const series=current.map(x=>({label:new Date(x.recorded_at).toLocaleDateString("it-IT",{day:"2-digit",month:"2-digit"}),value:Number(x.score||0)}));
  return `<div class="stats">${stat("Registrazioni",current.length)}${stat("Wellness medio",mean!==null?`${mean.toFixed(1)}/20`:"—")}${stat("Segnalazioni dolore",pain)}</div>
  ${series.length?simpleLineChart(series,"Wellness score","/20"):""}
- <div class="tableWrap historyGrid"><table><thead><tr><th>Data</th><th>Sonno</th><th>Stanchezza</th><th>DOMS</th><th>Stress</th><th>Score</th><th>Dolore</th></tr></thead><tbody>${current.slice().reverse().map(x=>`<tr><td>${fmt(x.recorded_at)}</td><td>${x.sleep}</td><td>${x.fatigue}</td><td>${x.doms}</td><td>${x.stress}</td><td><b>${x.score}/20</b></td><td>${x.pain||"—"}</td></tr>`).join("")||'<tr><td colspan="7">Nessun wellness nel periodo</td></tr>'}</tbody></table></div>`;
+ <div class="tableWrap historyGrid"><table><thead><tr><th>Data</th><th>Sonno</th><th>Stanchezza</th><th>DOMS</th><th>Stress</th><th>Score</th><th>Dolore</th>${canCoachEdit()?"<th>Azioni</th>":""}</tr></thead><tbody>${current.slice().reverse().map(x=>`<tr><td>${fmt(x.recorded_at)}</td><td>${x.sleep}</td><td>${x.fatigue}</td><td>${x.doms}</td><td>${x.stress}</td><td><b>${x.score}/20</b></td><td>${x.pain||"—"}</td>${canCoachEdit()?`<td><div class="rowActions"><button class="editBtn" data-hist-edit-well="${x.id}">✏️</button><button class="dangerBtn" data-hist-del-well="${x.id}">🗑️</button></div></td>`:""}</tr>`).join("")||'<tr><td colspan="8">Nessun wellness nel periodo</td></tr>'}</tbody></table></div>`;
 }
 function simpleBarChart(points,title,unit){
  if(!points.length)return "";
