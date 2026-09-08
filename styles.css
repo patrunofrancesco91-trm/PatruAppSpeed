@@ -117,7 +117,7 @@ select option{background:#fff;color:#231f20}
 :root{--ink:#151515;--charcoal:#22252a}
 body{background:radial-gradient(circle at top right,#fff0f2 0,#fff 32%,#fff8f9 100%)}
 .topbar{padding:9px 18px;background:linear-gradient(100deg,#111 0,#2b0b10 34%,#c8102e 100%);min-height:76px}
-.brandWrap{display:flex;align-items:center;gap:12px;min-width:0}.brandLogo{height:58px;width:170px;object-fit:cover;object-position:left top;border-radius:7px;mix-blend-mode:screen}
+.brandWrap{display:flex;align-items:center;gap:12px;min-width:0}.brandLogo{height:58px;width:190px;object-fit:contain;object-position:center;background:#fff;border-radius:10px;padding:5px;box-shadow:0 3px 10px rgba(0,0,0,.18)}
 .brandText h1{font-size:1.2rem;letter-spacing:.02em}.brandText p{letter-spacing:.05em;text-transform:uppercase;font-size:.68rem}
 .authWrap{background:linear-gradient(rgba(10,10,10,.68),rgba(75,0,12,.67)),url("assets/hero.jpg") center/cover;border-radius:22px;min-height:76vh;padding:28px}
 .authCard{backdrop-filter:blur(14px);background:rgba(255,255,255,.95);border:1px solid rgba(255,255,255,.6)}
@@ -135,7 +135,7 @@ body{background:radial-gradient(circle at top right,#fff0f2 0,#fff 32%,#fff8f9 1
 .compareDirect{margin-top:14px}.comparisonMatrix{display:grid;grid-template-columns:1.1fr repeat(3,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:12px;overflow:hidden}.comparisonMatrix>*{background:#fff;padding:10px}.comparisonMatrix>span{font-weight:800;background:#fff5f6}.comparisonMatrix>b{background:#fff0f2;color:#790017}.comparisonMatrix strong{font-size:1rem}
 .tableWrap{border-radius:12px}thead th{font-size:.78rem;text-transform:uppercase;letter-spacing:.035em}
 @media(max-width:760px){
- .brandLogo{width:105px;height:47px}.brandText h1{font-size:1rem}.brandText p{display:none}.topbar{padding:8px 10px}
+ .brandLogo{width:120px;height:47px}.brandText h1{font-size:1rem}.brandText p{display:none}.topbar{padding:8px 10px}
  .dashboardHero{grid-template-columns:1fr}.dashboardHero img{max-height:180px;mask-image:linear-gradient(to bottom,transparent 0,#000 35%)}.dashboardHero>div{padding:20px}
  .comparisonMatrix{grid-template-columns:1fr 1fr}.comparisonMatrix>*:nth-child(4n){display:none}
  .authWrap{padding:12px;border-radius:14px}.rowActions{flex-direction:column}
