@@ -145,3 +145,12 @@ body{background:radial-gradient(circle at top right,#fff0f2 0,#fff 32%,#fff8f9 1
 .pstLogoSvg{display:block;width:260px;height:60px;max-width:100%;flex:0 0 auto}
 .authBrand .pstLogoSvg{width:320px;height:82px;margin:0 auto;background:#111;border-radius:14px;padding:8px}
 @media(max-width:760px){.pstLogoSvg{width:165px;height:46px}.brandText{display:none}.authBrand .pstLogoSvg{width:250px;height:70px}}
+
+/* V3.4 — Presenze e date effettive */
+.attendanceHead{overflow:hidden}.weekNav{display:flex;gap:6px;flex-wrap:wrap}.weekTitle{font-size:1.35rem;font-weight:900;margin:6px 0 12px;color:#8b0018}
+.attendanceLegend{display:flex;gap:14px;flex-wrap:wrap;margin:8px 0 14px;font-size:.88rem;font-weight:700}
+.attendanceTable table{min-width:840px}.attendanceTable th{text-align:center}.attendanceTable td:first-child{position:sticky;left:0;background:#fff;z-index:1;min-width:150px}
+.attCell{text-align:center;padding:5px!important;min-width:92px}.attendanceCellBtn{width:100%;min-height:52px;border:0;border-radius:11px;background:#f5f5f6;font-size:1.3rem;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px}
+.attendanceCellBtn small,.attendanceRead small{font-size:.68rem;font-weight:800}.attendanceRead{min-height:48px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:1.3rem}
+.attPresent .attendanceCellBtn,.attPresent{background:#eef9f1}.attAbsent .attendanceCellBtn,.attAbsent{background:#fff0f1}.attMaybe .attendanceCellBtn,.attMaybe{background:#fff8e8}
+@media(max-width:760px){.weekNav button{padding:8px 10px}.weekTitle{font-size:1.08rem}.attendanceLegend{font-size:.78rem;gap:8px}}
