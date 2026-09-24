@@ -632,7 +632,10 @@ async function renderProgram(){
          <div class="sectionTitle"><div><b>${s.title||s.training_types?.name||"Seduta"}</b><small>${s.training_types?.name||""}</small></div><span class="badge ${completed.has(s.id)||s.status==="completed"?"ok":""}">${completed.has(s.id)||s.status==="completed"?"Svolto":"Programmato"}</span></div>
          <div class="programBlocksView">${blocksSummaryHTML(s.planned_blocks||[],false)}</div>
          ${s.notes?`<p>${s.notes}</p>`:""}
-         ${profile.role!=="doctor"&&!completed.has(s.id)&&s.status!=="completed"?`<button class="primary smallBtn" data-execute-program="${s.id}">Registra svolto</button>`:""}
+         <div class="programActions">
+           ${profile.role!=="doctor"&&!completed.has(s.id)&&s.status!=="completed"?`<button class="primary smallBtn" data-execute-program="${s.id}">Registra svolto</button>`:""}
+           ${canEditProgram()?`<button class="dangerBtn smallBtn" data-delete-program="${s.id}">🗑️ Elimina</button>`:""}
+         </div>
        </div>`).join(""):'<div class="programRest">Riposo / nessuna seduta programmata</div>'}
      </div>`;
    }).join("")}</div>`;
@@ -669,6 +672,9 @@ async function renderProgram(){
    document.querySelectorAll("[data-execute-program]").forEach(b=>b.onclick=()=>{
      sessionStorage.setItem("programToExecute",b.dataset.executeProgram);
      activeTab="training";renderTabs();render();
+   });
+   document.querySelectorAll("[data-delete-program]").forEach(b=>b.onclick=async()=>{
+     await deletePlannedSession(b.dataset.deleteProgram,draw);
    });
  }
  $("#programPrev").onclick=()=>{weekOffset--;sessionStorage.setItem("programWeekOffset",weekOffset);draw()};
@@ -755,6 +761,62 @@ async function showTrainingDetailsModal(trainings,date,athleteId){
    });
  }
 }
+
+
+async function deletePlannedSession(id,after){
+ if(!["coach","assistant_coach"].includes(profile?.role))return;
+ if(!confirm("Eliminare questa seduta programmata? I blocchi collegati verranno eliminati automaticamente."))return;
+ const {error}=await sb.from("planned_sessions").delete().eq("id",id);
+ if(error)return toast(error.message);
+ toast("Seduta programmata eliminata");
+ if(after)await after();
+}
+function showPlannedTrainingModal(session){
+ const old=document.getElementById("plannedTrainingOverlay");if(old)old.remove();
+ const blocks=session.planned_blocks||[];
+ const el=document.createElement("div");
+ el.id="plannedTrainingOverlay";
+ el.className="modalOverlay";
+ el.innerHTML=`<div class="editModal card trainingDetailsModal">
+   <div class="sectionTitle">
+     <div>
+       <span class="eyebrow">SEDUTA PROGRAMMATA</span>
+       <h2>${session.title||session.training_types?.name||"Allenamento"}</h2>
+       <p class="muted">${fmtDate(session.session_date)} · ${session.training_types?.name||""}</p>
+     </div>
+     <button class="modalClose secondary">✕</button>
+   </div>
+   <div class="trainingDetailText">
+     <span>Programma completo</span>
+     <div>${blocksSummaryHTML(blocks,false)}</div>
+   </div>
+   ${session.notes?`<div class="trainingDetailText"><span>Note del programma</span><p>${session.notes}</p></div>`:""}
+   <div class="modalActions">
+     <button class="secondary modalCloseBottom">Chiudi</button>
+     ${["coach","assistant_coach"].includes(profile?.role)?`<button class="dangerBtn" id="deletePlannedSessionBtn">🗑️ Elimina seduta</button>`:""}
+     ${profile.role!=="doctor"?`<button class="primary" id="executePlannedSession">Registra allenamento svolto</button>`:""}
+   </div>
+ </div>`;
+ document.body.appendChild(el);
+ const close=()=>el.remove();
+ el.querySelector(".modalClose").onclick=close;
+ el.querySelector(".modalCloseBottom").onclick=close;
+ el.onclick=e=>{if(e.target===el)close()};
+ if($("#deletePlannedSessionBtn"))$("#deletePlannedSessionBtn").onclick=async()=>{
+   const ok=confirm("Sei sicuro di voler eliminare questa seduta programmata?");
+   if(!ok)return;
+   const {error}=await sb.from("planned_sessions").delete().eq("id",session.id);
+   if(error)return toast(error.message);
+   close();
+   toast("Seduta programmata eliminata");
+   await renderTraining();
+ };
+ if($("#executePlannedSession"))$("#executePlannedSession").onclick=()=>{
+   sessionStorage.setItem("programToExecute",session.id);
+   close();
+   renderTraining();
+ };
+}
 async function renderTraining(){
  const athleteField=await athleteSelectHTML(), types=await getTrainingTypes();
  const aa=isStaff()?await getAthletes():[athleteProfile];
@@ -801,23 +863,30 @@ async function renderTraining(){
    const first=new Date(y,m,1,12),last=new Date(y,m+1,0,12);
    const start=localISODate(first),end=localISODate(last),id=diaryAthleteId();
    $("#diaryMonthLabel").textContent=first.toLocaleDateString("it-IT",{month:"long",year:"numeric"});
-   const [{data:t,error:te},{data:a,error:ae}]=await Promise.all([
-     sb.from("trainings").select("id,training_date,duration_min,srpe,session_load,work_done,times_results,pain_post,notes,training_types(name)").eq("athlete_id",id).gte("training_date",start).lte("training_date",end).order("training_date"),
-     sb.from("attendance").select("attendance_date,status,expected_time,note").eq("athlete_id",id).gte("attendance_date",start).lte("attendance_date",end)
+   const [{data:t,error:te},{data:a,error:ae},{data:p,error:pe}]=await Promise.all([
+     sb.from("trainings").select("id,planned_session_id,training_date,duration_min,srpe,session_load,work_done,times_results,pain_post,notes,training_types(name)").eq("athlete_id",id).gte("training_date",start).lte("training_date",end).order("training_date"),
+     sb.from("attendance").select("attendance_date,status,expected_time,note").eq("athlete_id",id).gte("attendance_date",start).lte("attendance_date",end),
+     sb.from("planned_sessions").select("*,training_types(name),planned_blocks(*)").eq("athlete_id",id).gte("session_date",start).lte("session_date",end).order("session_date")
    ]);
-   if(te||ae){$("#trainingDiary").innerHTML=`<div class="note">${(te||ae).message}</div>`;return}
+   if(te||ae||pe){$("#trainingDiary").innerHTML=`<div class="note">${(te||ae||pe).message}</div>`;return}
    const byTrain={};(t||[]).forEach(x=>(byTrain[x.training_date]??=[]).push(x));
+   const byPlan={};(p||[]).forEach(x=>(byPlan[x.session_date]??=[]).push(x));
+   const completedPlanIds=new Set((t||[]).map(x=>x.planned_session_id).filter(Boolean));
    const byAtt=new Map((a||[]).map(x=>[x.attendance_date,x]));
    const offset=(first.getDay()+6)%7; // Monday=0
    const total=Math.ceil((offset+last.getDate())/7)*7;
    const cells=[];
    for(let i=0;i<total;i++){
      const d=new Date(y,m,1-offset+i,12),iso=localISODate(d),inMonth=d.getMonth()===m;
-     const tr=byTrain[iso]||[],att=byAtt.get(iso),future=d>new Date(new Date().setHours(23,59,59,999));
+     const tr=byTrain[iso]||[],pl=(byPlan[iso]||[]).filter(x=>!completedPlanIds.has(x.id)),att=byAtt.get(iso),future=d>new Date(new Date().setHours(23,59,59,999));
      let body="",cls="";
      if(tr.length){
        cls="hasTraining";
-       body=tr.map(x=>`<div class="diaryTrainingChip"><b>${x.training_types?.name||"Allenamento"}</b><small>${x.duration_min}′ · RPE ${x.srpe} · TL ${x.session_load} AU</small></div>`).join("");
+       body=tr.map(x=>`<div class="diaryTrainingChip actualChip"><b>✅ ${x.training_types?.name||"Allenamento svolto"}</b><small>${x.duration_min}′ · RPE ${x.srpe} · TL ${x.session_load} AU</small></div>`).join("");
+       if(pl.length) body+=pl.map(x=>`<div class="diaryTrainingChip plannedChip" data-plan-id="${x.id}"><b>📋 ${x.title||x.training_types?.name||"Seduta programmata"}</b><small>Programmato</small></div>`).join("");
+     }else if(pl.length){
+       cls="hasPlannedTraining";
+       body=pl.map(x=>`<div class="diaryTrainingChip plannedChip" data-plan-id="${x.id}"><b>📋 ${x.title||x.training_types?.name||"Seduta programmata"}</b><small>${blocksSummaryHTML(x.planned_blocks||[],false)}</small></div>`).join("");
      }else if(att?.status==="present"){
        cls="plannedPresent"; body=`<div class="diaryState">🟡 Presente${att.expected_time?` · ${String(att.expected_time).slice(0,5)}`:""}<small>Allenamento da registrare</small></div>`;
      }else if(att?.status==="maybe"){
@@ -830,17 +899,28 @@ async function renderTraining(){
      </button>`);
    }
    $("#trainingDiary").innerHTML=`<div class="diaryWeekdays">${["Lun","Mar","Mer","Gio","Ven","Sab","Dom"].map(x=>`<span>${x}</span>`).join("")}</div><div class="diaryGrid">${cells.join("")}</div>
-   <div class="diaryLegend"><span>🏃 Seduta registrata</span><span>🟡 Presente: seduta da registrare</span><span>❓ Da confermare</span><span>○ Riposo</span></div>`;
-   document.querySelectorAll("[data-diary-date]").forEach(b=>b.onclick=()=>{
+   <div class="diaryLegend"><span>✅ Allenamento svolto</span><span>📋 Seduta programmata</span><span>🟡 Presente: da registrare</span><span>❓ Da confermare</span><span>○ Riposo</span></div>`;
+   document.querySelectorAll("[data-diary-date]").forEach(b=>b.onclick=e=>{
+     if(e.target.closest("[data-plan-id]"))return;
      const date=b.dataset.diaryDate;
      const dayTrainings=byTrain[date]||[];
+     const dayPlans=(byPlan[date]||[]).filter(x=>!completedPlanIds.has(x.id));
      if(dayTrainings.length){
        showTrainingDetailsModal(dayTrainings,date,id);
+       return;
+     }
+     if(dayPlans.length){
+       showPlannedTrainingModal(dayPlans[0]);
        return;
      }
      $("#trainingDate").value=date;
      if(isStaff()&&$("#athleteId"))$("#athleteId").value=id;
      $("#trainingForm").scrollIntoView({behavior:"smooth",block:"start"});
+   });
+   document.querySelectorAll("[data-plan-id]").forEach(el=>el.onclick=e=>{
+     e.stopPropagation();
+     const s=(p||[]).find(x=>x.id===el.dataset.planId);
+     if(s)showPlannedTrainingModal(s);
    });
  }
  $("#diaryPrev").onclick=async()=>{diaryDate.setMonth(diaryDate.getMonth()-1);await drawDiary()};

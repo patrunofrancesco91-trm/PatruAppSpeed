@@ -203,3 +203,14 @@ body{background:radial-gradient(circle at top right,#fff0f2 0,#fff 32%,#fff8f9 1
 .generalPill{background:#f7f7fb;border-color:#dddde8}
 @media(max-width:950px){.workBlockRow{grid-template-columns:repeat(4,minmax(120px,1fr))}}
 @media(max-width:620px){.workBlockRow{grid-template-columns:repeat(2,minmax(120px,1fr))}.blockButtons button{font-size:.72rem;padding:7px 8px}}
+
+/* V3.7.1 — sedute programmate visibili nel calendario Allenamento */
+.hasPlannedTraining{background:#f5f2ff;border-color:#d9ccff}
+.diaryTrainingChip.plannedChip{background:#6d4cc8;color:#fff;cursor:pointer}
+.diaryTrainingChip.plannedChip small{color:#eee6ff;display:block;margin-top:4px}
+.diaryTrainingChip.plannedChip .volumePill{display:block;margin:4px 0 0;background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.3);color:#fff;white-space:normal}
+.diaryTrainingChip.actualChip{background:#c8102e}
+
+/* V3.7.2 — eliminazione sedute programmate */
+.programActions{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}
+.programActions .smallBtn{margin:0}
