@@ -467,14 +467,45 @@ async function getTrainingTypes(){
 
 
 function blockEditorRow(prefix,index,data={}){
+ const kind=data.block_kind||((data.quality==="Forza")?"strength":"run");
  const q=data.quality||"Accelerazione";
- return `<div class="workBlockRow" data-block-row="${prefix}_${index}">
-   <label>Qualità<select class="${prefix}Quality">${PERFORMANCE_QUALITIES.map(x=>`<option ${x===q?"selected":""}>${x}</option>`).join("")}</select></label>
-   <label>Distanza (m)<input class="${prefix}Distance" type="number" min="0" step="1" value="${data.distance_m??""}" placeholder="es. 120"></label>
+ const isStrength=kind==="strength";
+ const isRun=kind==="run";
+ const isGeneral=["warmup","mobility","technique","freq_amp"].includes(kind);
+ const labelMap={run:"Corsa / specifico",strength:"Forza",warmup:"Riscaldamento",mobility:"Mobilità",technique:"Tecnica di corsa",freq_amp:"Frequenza / ampiezza"};
+ return `<div class="workBlockRow ${kind}Block" data-block-row="${prefix}_${index}">
+   <label>Tipo<select class="${prefix}Kind blockKind">
+     ${Object.entries(labelMap).map(([v,l])=>`<option value="${v}" ${kind===v?"selected":""}>${l}</option>`).join("")}
+   </select></label>
+
+   <label class="runOnly">Qualità<select class="${prefix}Quality">${PERFORMANCE_QUALITIES.filter(x=>x!=="Forza").map(x=>`<option ${x===q?"selected":""}>${x}</option>`).join("")}</select></label>
+
+   <label class="generalOnly">${kind==="freq_amp"?"Focus":"Esercizio / contenuto"}
+     <input class="${prefix}Exercise" value="${data.exercise??""}" placeholder="${kind==="freq_amp"?"es. Frequenza, Ampiezza, Dribble":"es. mobilità anche, skip, jogging..."}">
+   </label>
+
+   <label class="runOnly">Distanza (m)<input class="${prefix}Distance" type="number" min="0" step="1" value="${data.distance_m??""}" placeholder="es. 120"></label>
+   <label class="strengthOnly">Esercizio<input class="${prefix}ExerciseStrength" value="${data.exercise??""}" placeholder="es. Squat"></label>
+
    <label>Serie<input class="${prefix}Sets" type="number" min="1" step="1" value="${data.sets??1}"></label>
-   <label>${prefix==="actual"?"Rip. previste":"Ripetute"}<input class="${prefix}PlannedReps" type="number" min="1" step="1" value="${data.planned_reps??data.reps??1}"></label>
+
+   <label>${prefix==="actual"?"Rip. previste":"Ripetute"}
+     <input class="${prefix}PlannedReps" type="number" min="0" step="1" value="${data.planned_reps??data.reps??1}">
+   </label>
+
    ${prefix==="actual"?`<label>Rip. effettive<input class="${prefix}CompletedReps" type="number" min="0" step="1" value="${data.completed_reps??data.planned_reps??1}"></label>`:""}
-   <label>Recupero<input class="${prefix}Recovery" value="${data.recovery_text??""}" placeholder="es. 3′ / 6′"></label>
+
+   <label class="strengthOnly">Carico (kg)<input class="${prefix}LoadKg" type="number" min="0" step="0.5" value="${data.load_kg??""}" placeholder="kg"></label>
+
+   <label class="generalOnly">Durata (min)<input class="${prefix}DurationMin" type="number" min="0" step="1" value="${data.duration_min??""}" placeholder="min"></label>
+
+   <label class="freqOnly">Focus<select class="${prefix}Subtype">
+      <option value="frequency" ${data.subtype==="frequency"?"selected":""}>Frequenza</option>
+      <option value="amplitude" ${data.subtype==="amplitude"?"selected":""}>Ampiezza</option>
+      <option value="mixed" ${!data.subtype||data.subtype==="mixed"?"selected":""}>Misto</option>
+   </select></label>
+
+   <label class="runOnly">Recupero<input class="${prefix}Recovery" value="${data.recovery_text??""}" placeholder="es. 3′ / 6′"></label>
    <label class="blockNotes">Note<input class="${prefix}BlockNotes" value="${data.notes??""}"></label>
    <button type="button" class="dangerBtn removeBlock">✕</button>
  </div>`;
@@ -483,30 +514,67 @@ function addBlockRow(containerId,prefix,data={}){
  const c=document.getElementById(containerId); if(!c)return;
  const idx=Date.now()+Math.floor(Math.random()*1000);
  c.insertAdjacentHTML("beforeend",blockEditorRow(prefix,idx,data));
- c.lastElementChild.querySelector(".removeBlock").onclick=()=>c.lastElementChild.remove();
+ const row=c.lastElementChild;
+ row.querySelector(".removeBlock").onclick=()=>row.remove();
+ const kindSel=row.querySelector(`.${prefix}Kind`);
+ const refresh=()=>{
+   const kind=kindSel.value;
+   row.className=`workBlockRow ${kind}Block`;
+   row.querySelectorAll(".runOnly,.strengthOnly,.generalOnly,.freqOnly").forEach(x=>x.style.display="none");
+   if(kind==="run") row.querySelectorAll(".runOnly").forEach(x=>x.style.display="");
+   if(kind==="strength") row.querySelectorAll(".strengthOnly").forEach(x=>x.style.display="");
+   if(["warmup","mobility","technique","freq_amp"].includes(kind)) row.querySelectorAll(".generalOnly").forEach(x=>x.style.display="");
+   if(kind==="freq_amp") row.querySelectorAll(".freqOnly").forEach(x=>x.style.display="");
+ };
+ kindSel.onchange=refresh;
+ refresh();
 }
 function collectBlockRows(containerId,prefix){
  const c=document.getElementById(containerId); if(!c)return [];
  return [...c.querySelectorAll(".workBlockRow")].map(r=>{
+   const kind=r.querySelector(`.${prefix}Kind`)?.value||"run";
+   const generalExercise=r.querySelector(`.${prefix}Exercise`)?.value||"";
+   const strengthExercise=r.querySelector(`.${prefix}ExerciseStrength`)?.value||"";
    const o={
-     quality:r.querySelector(`.${prefix}Quality`)?.value||"Altro",
-     distance_m:Number(r.querySelector(`.${prefix}Distance`)?.value||0),
+     block_kind:kind,
+     quality:kind==="strength"?"Forza":kind==="run"?(r.querySelector(`.${prefix}Quality`)?.value||"Altro"):
+       ({warmup:"Riscaldamento",mobility:"Mobilità",technique:"Tecnica di corsa",freq_amp:"Frequenza / ampiezza"}[kind]||"Altro"),
+     distance_m:kind==="run"?Number(r.querySelector(`.${prefix}Distance`)?.value||0):0,
+     exercise:kind==="strength"?strengthExercise.trim():generalExercise.trim(),
+     load_kg:kind==="strength"?Number(r.querySelector(`.${prefix}LoadKg`)?.value||0):0,
+     duration_min:["warmup","mobility","technique","freq_amp"].includes(kind)?Number(r.querySelector(`.${prefix}DurationMin`)?.value||0):0,
+     subtype:kind==="freq_amp"?(r.querySelector(`.${prefix}Subtype`)?.value||"mixed"):null,
      sets:Number(r.querySelector(`.${prefix}Sets`)?.value||1),
      planned_reps:Number(r.querySelector(`.${prefix}PlannedReps`)?.value||0),
-     recovery_text:r.querySelector(`.${prefix}Recovery`)?.value||"",
+     recovery_text:kind==="run"?(r.querySelector(`.${prefix}Recovery`)?.value||""):"",
      notes:r.querySelector(`.${prefix}BlockNotes`)?.value||""
    };
    if(prefix==="actual")o.completed_reps=Number(r.querySelector(`.${prefix}CompletedReps`)?.value||0);
    return o;
- }).filter(x=>x.distance_m>0 && x.planned_reps>=0 && x.sets>0);
+ }).filter(x=>{
+   if(x.block_kind==="run") return x.distance_m>0;
+   if(x.block_kind==="strength") return !!x.exercise;
+   return !!x.exercise || x.duration_min>0;
+ });
 }
 function volumeForBlock(b,actual=true){
  const reps=actual?(Number(b.completed_reps??b.planned_reps??0)):Number(b.planned_reps??0);
+ if((b.block_kind||"run")==="strength") return Number(b.load_kg||0)*Number(b.sets||1)*reps;
  return Number(b.distance_m||0)*Number(b.sets||1)*reps;
 }
 function blocksSummaryHTML(blocks,actual=true){
  if(!blocks?.length)return '<span class="muted">Nessun blocco specifico</span>';
- return blocks.map(b=>`<span class="volumePill"><b>${b.quality}</b> · ${b.sets||1}×${actual?(b.completed_reps??b.planned_reps):(b.planned_reps)}×${b.distance_m} m = ${Math.round(volumeForBlock(b,actual))} m</span>`).join(" ");
+ return blocks.map(b=>{
+   const reps=actual?(b.completed_reps??b.planned_reps):b.planned_reps;
+   const kind=b.block_kind||"run";
+   if(kind==="strength")
+     return `<span class="volumePill strengthPill"><b>Forza · ${b.exercise||"Esercizio"}</b> · ${b.sets||1}×${reps} @ ${Number(b.load_kg||0)} kg = ${Math.round(volumeForBlock(b,actual))} kg volume-load</span>`;
+   if(kind==="run")
+     return `<span class="volumePill"><b>${b.quality}</b> · ${b.sets||1}×${reps}×${b.distance_m} m = ${Math.round(volumeForBlock(b,actual))} m</span>`;
+   const icon={warmup:"🔥",mobility:"🧘",technique:"🏃",freq_amp:"⚡"}[kind]||"•";
+   const sub=kind==="freq_amp"?(b.subtype==="frequency"?"Frequenza":b.subtype==="amplitude"?"Ampiezza":"Misto"):"";
+   return `<span class="volumePill generalPill">${icon} <b>${b.quality}${sub?` · ${sub}`:""}</b> · ${b.exercise||"contenuto"}${b.duration_min?` · ${b.duration_min} min`:""}${reps?` · ${b.sets||1}×${reps}`:""}</span>`;
+ }).join(" ");
 }
 
 async function renderProgram(){
@@ -528,7 +596,14 @@ async function renderProgram(){
    <div class="grid two"><label>Data<input type="date" id="programDate" value="${localISODate()}" required></label>
    <label>Tipo seduta<select id="programType">${types.map(t=>`<option value="${t.id}">${t.name}</option>`).join("")}</select></label></div>
    <label>Titolo / focus<input id="programTitle" placeholder="es. Accelerazioni + tecnica"></label>
-   <div class="sectionTitle"><h3>Blocchi programmati</h3><button type="button" class="secondary" id="addProgramBlock">+ Blocco</button></div>
+   <div class="sectionTitle"><h3>Blocchi programmati</h3><div class="rowActions blockButtons">
+<button type="button" class="secondary" id="addProgramWarmupBlock">+ Riscaldamento</button>
+<button type="button" class="secondary" id="addProgramMobilityBlock">+ Mobilità</button>
+<button type="button" class="secondary" id="addProgramTechniqueBlock">+ Tecnica</button>
+<button type="button" class="secondary" id="addProgramFreqBlock">+ Frequenza/Ampiezza</button>
+<button type="button" class="secondary" id="addProgramRunBlock">+ Corsa</button>
+<button type="button" class="secondary" id="addProgramStrengthBlock">+ Forza</button>
+</div></div>
    <div id="programBlocks" class="workBlocks"></div>
    <label>Note programma<textarea id="programNotes" placeholder="Indicazioni tecniche, recuperi, obiettivi..."></textarea></label>
    <button class="primary">Salva nel programma</button>
@@ -547,7 +622,9 @@ async function renderProgram(){
    if(error){$("#programBoard").innerHTML=`<div class="note">${error.message}<br><b>Esegui prima V3_6_UPGRADE.sql.</b></div>`;return}
    const byDate={};(p||[]).forEach(x=>(byDate[x.session_date]??=[]).push(x));
    const completed=new Set((t||[]).map(x=>x.planned_session_id).filter(Boolean));
-   $("#programBoard").innerHTML=`<div class="programWeekHeader"><strong>${fmtDate(start)} – ${fmtDate(end)}</strong></div>
+   $("#programBoard").innerHTML=`<div class="programWeekHeader"><div class="sectionTitle"><strong>${fmtDate(start)} – ${fmtDate(end)}</strong>
+   ${canEditProgram()?`<div class="rowActions"><button class="secondary" id="copyWeekBtn">📋 Copia settimana</button><button class="secondary" id="repeatWeekBtn">🔁 Ripeti nel mesociclo</button></div>`:""}
+   </div></div>
    <div class="programWeekGrid">${days.map(d=>{
      const iso=localISODate(d),list=byDate[iso]||[];
      return `<div class="programDay"><div class="programDayHead"><b>${d.toLocaleDateString("it-IT",{weekday:"short"})}</b><span>${d.getDate()}</span></div>
@@ -559,6 +636,36 @@ async function renderProgram(){
        </div>`).join(""):'<div class="programRest">Riposo / nessuna seduta programmata</div>'}
      </div>`;
    }).join("")}</div>`;
+
+   if(canEditProgram()){
+     const duplicateWeek=async(repeats=1)=>{
+       const source=p||[];
+       if(!source.length)return toast("Nessuna seduta da copiare in questa settimana.");
+       const raw=prompt(repeats===1?"Data del lunedì di destinazione (AAAA-MM-GG):":"Data del lunedì di inizio mesociclo (AAAA-MM-GG):",localISODate(addDaysDate(monday,7)));
+       if(!raw)return;
+       const targetMonday=new Date(raw+"T12:00:00");
+       const weekCount=repeats===1?1:Number(prompt("Quante settimane vuoi programmare?",4)||0);
+       if(!weekCount||weekCount<1)return;
+       if(!confirm(`Copio ${source.length} sedute per ${weekCount} settimana/e. Confermi?`))return;
+       for(let w=0;w<weekCount;w++){
+         for(const s of source){
+           const srcDate=new Date(s.session_date+"T12:00:00");
+           const delta=Math.round((srcDate-monday)/86400000);
+           const newDate=localISODate(addDaysDate(targetMonday,delta+w*7));
+           const {data:newS,error:se}=await sb.from("planned_sessions").insert({
+             athlete_id:s.athlete_id,session_date:newDate,training_type_id:s.training_type_id,title:s.title,notes:s.notes,status:"planned",created_by:currentUser.id
+           }).select("id").single();
+           if(se)return toast(se.message);
+           const blocks=(s.planned_blocks||[]).map(({id,planned_session_id,planned_volume_m,created_at,...b})=>({planned_session_id:newS.id,...b}));
+           if(blocks.length){const {error:be}=await sb.from("planned_blocks").insert(blocks);if(be)return toast(be.message)}
+         }
+       }
+       toast("Programmazione copiata");await draw();
+     };
+     $("#copyWeekBtn").onclick=()=>duplicateWeek(1);
+     $("#repeatWeekBtn").onclick=()=>duplicateWeek(4);
+   }
+
    document.querySelectorAll("[data-execute-program]").forEach(b=>b.onclick=()=>{
      sessionStorage.setItem("programToExecute",b.dataset.executeProgram);
      activeTab="training";renderTabs();render();
@@ -572,8 +679,13 @@ async function renderProgram(){
    draw();
  };
  if($("#programForm")){
-   addBlockRow("programBlocks","program",{quality:"Accelerazione",sets:1,planned_reps:4,distance_m:30});
-   $("#addProgramBlock").onclick=()=>addBlockRow("programBlocks","program");
+   addBlockRow("programBlocks","program",{block_kind:"run",quality:"Accelerazione",sets:1,planned_reps:4,distance_m:30});
+   $("#addProgramWarmupBlock").onclick=()=>addBlockRow("programBlocks","program",{block_kind:"warmup",exercise:"Corsa blanda + attivazione",duration_min:10,sets:1,planned_reps:1});
+   $("#addProgramMobilityBlock").onclick=()=>addBlockRow("programBlocks","program",{block_kind:"mobility",exercise:"Mobilità dinamica",duration_min:8,sets:1,planned_reps:1});
+   $("#addProgramTechniqueBlock").onclick=()=>addBlockRow("programBlocks","program",{block_kind:"technique",exercise:"Skip / dribble / gambe tese",sets:2,planned_reps:2});
+   $("#addProgramFreqBlock").onclick=()=>addBlockRow("programBlocks","program",{block_kind:"freq_amp",exercise:"Drill frequenza/ampiezza",subtype:"mixed",sets:2,planned_reps:3});
+   $("#addProgramRunBlock").onclick=()=>addBlockRow("programBlocks","program",{block_kind:"run",quality:"Accelerazione"});
+   $("#addProgramStrengthBlock").onclick=()=>addBlockRow("programBlocks","program",{block_kind:"strength",quality:"Forza",exercise:"Squat",sets:4,planned_reps:4,load_kg:0});
    $("#programForm").onsubmit=async e=>{
      e.preventDefault();
      const athleteId=isStaff()?$("#programFormAth").value:athleteProfile.id;
@@ -659,7 +771,14 @@ async function renderTraining(){
  <label>Tipo seduta<select id="trainingType">${types.map(x=>`<option value="${x.id}">${x.name}</option>`).join("")}</select></label>
  <label>Lavoro reale svolto<textarea id="workDone" placeholder="Serie, ripetizioni, distanze, recuperi, carichi..."></textarea></label>
  <div class="card innerCard structuredWorkCard">
-   <div class="sectionTitle"><div><h3>Volume specifico</h3><p class="muted">Inserisci le ripetute effettivamente completate: Performance si aggiorna da sola.</p></div><button type="button" class="secondary" id="addActualBlock">+ Blocco</button></div>
+   <div class="sectionTitle"><div><h3>Lavoro strutturato</h3><p class="muted">Registra anche riscaldamento, mobilità, tecnica e lavori di frequenza/ampiezza.</p></div><div class="rowActions blockButtons">
+<button type="button" class="secondary" id="addActualWarmupBlock">+ Riscaldamento</button>
+<button type="button" class="secondary" id="addActualMobilityBlock">+ Mobilità</button>
+<button type="button" class="secondary" id="addActualTechniqueBlock">+ Tecnica</button>
+<button type="button" class="secondary" id="addActualFreqBlock">+ Frequenza/Ampiezza</button>
+<button type="button" class="secondary" id="addActualRunBlock">+ Corsa</button>
+<button type="button" class="secondary" id="addActualStrengthBlock">+ Forza</button>
+</div></div>
    <div id="actualBlocks" class="workBlocks"></div>
    <input type="hidden" id="plannedSessionId">
  </div>
@@ -737,8 +856,13 @@ async function renderTraining(){
  };
 
 
- addBlockRow("actualBlocks","actual",{quality:"Accelerazione",sets:1,planned_reps:1,completed_reps:1});
- $("#addActualBlock").onclick=()=>addBlockRow("actualBlocks","actual");
+ addBlockRow("actualBlocks","actual",{block_kind:"run",quality:"Accelerazione",sets:1,planned_reps:1,completed_reps:1});
+ $("#addActualWarmupBlock").onclick=()=>addBlockRow("actualBlocks","actual",{block_kind:"warmup",exercise:"Corsa blanda + attivazione",duration_min:10,sets:1,planned_reps:1,completed_reps:1});
+ $("#addActualMobilityBlock").onclick=()=>addBlockRow("actualBlocks","actual",{block_kind:"mobility",exercise:"Mobilità dinamica",duration_min:8,sets:1,planned_reps:1,completed_reps:1});
+ $("#addActualTechniqueBlock").onclick=()=>addBlockRow("actualBlocks","actual",{block_kind:"technique",exercise:"Skip / dribble / gambe tese",sets:2,planned_reps:2,completed_reps:2});
+ $("#addActualFreqBlock").onclick=()=>addBlockRow("actualBlocks","actual",{block_kind:"freq_amp",exercise:"Drill frequenza/ampiezza",subtype:"mixed",sets:2,planned_reps:3,completed_reps:3});
+ $("#addActualRunBlock").onclick=()=>addBlockRow("actualBlocks","actual",{block_kind:"run",quality:"Accelerazione"});
+ $("#addActualStrengthBlock").onclick=()=>addBlockRow("actualBlocks","actual",{block_kind:"strength",quality:"Forza",exercise:"Squat",sets:4,planned_reps:4,completed_reps:4,load_kg:0});
 
  const programToExecute=sessionStorage.getItem("programToExecute");
  if(programToExecute){
@@ -880,7 +1004,7 @@ function slugFieldKey(label){
  return (label||"campo").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"").slice(0,32)+"_"+Date.now().toString(36);
 }
 const SPRINT_QUALITIES=["Accelerazione","V Max / Lanciati","Tempo Run","Speed Endurance","Special Speed Endurance","Ostacoli","Tecnica di corsa","Pliometria","Altro"];
-const PERFORMANCE_QUALITIES=SPRINT_QUALITIES;
+const PERFORMANCE_QUALITIES=[...SPRINT_QUALITIES,"Forza"];
 const STRENGTH_QUALITIES=["Forza Max","Potenza","Forza speciale","Mantenimento","Prevenzione","Forza generale","Altro"];
 
 function isoDateToday(){return new Date().toISOString().slice(0,10)}
@@ -922,7 +1046,7 @@ async function drawSprintPerformance(id){
  ]);
  if(error){$("#perfBody").innerHTML=`<div class="note">${error.message}<br><b>Esegui prima V3_6_UPGRADE.sql.</b></div>`;return}
  const sessions=t||[], rows=[];
- sessions.forEach(s=>(s.training_blocks||[]).forEach(b=>rows.push({
+ sessions.forEach(s=>(s.training_blocks||[]).filter(b=>(b.block_kind||"run")==="run").forEach(b=>rows.push({
    date:s.training_date,session:s.training_types?.name||"Allenamento",quality:b.quality,
    distance_m:Number(b.distance_m||0),sets:Number(b.sets||1),planned_reps:Number(b.planned_reps||0),
    completed_reps:Number(b.completed_reps||0),meters:volumeForBlock(b,true),training_id:s.id
@@ -933,7 +1057,7 @@ async function drawSprintPerformance(id){
  const byQ={};recent30.forEach(x=>byQ[x.quality]=(byQ[x.quality]||0)+x.meters);
  const tempo30=byQ["Tempo Run"]||0;
  const plannedRows=[];
- (planned||[]).filter(s=>parseDateLocal(s.session_date)>=d30).forEach(s=>(s.planned_blocks||[]).forEach(b=>plannedRows.push({quality:b.quality,meters:volumeForBlock(b,false)})));
+ (planned||[]).filter(s=>parseDateLocal(s.session_date)>=d30).forEach(s=>(s.planned_blocks||[]).filter(b=>(b.block_kind||"run")==="run").forEach(b=>plannedRows.push({quality:b.quality,meters:volumeForBlock(b,false)})));
  const plannedByQ={};plannedRows.forEach(x=>plannedByQ[x.quality]=(plannedByQ[x.quality]||0)+x.meters);
  const qualities=[...new Set([...Object.keys(plannedByQ),...Object.keys(byQ)])];
  const compare=qualities.map(q=>({q,planned:plannedByQ[q]||0,actual:byQ[q]||0,pct:plannedByQ[q]?((byQ[q]||0)/plannedByQ[q]*100):null}));

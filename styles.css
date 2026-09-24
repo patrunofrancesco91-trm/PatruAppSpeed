@@ -186,3 +186,20 @@ body{background:radial-gradient(circle at top right,#fff0f2 0,#fff 32%,#fff8f9 1
 .autoPerfStats{margin-bottom:12px}.legacyPerf summary{cursor:pointer;font-weight:800}.trainingDetailText .volumePill{white-space:normal}
 @media(max-width:1050px){.workBlockRow{grid-template-columns:repeat(4,1fr)}.workBlockRow .blockNotes{min-width:0}.programWeekGrid{min-width:1120px}}
 @media(max-width:650px){.workBlockRow{grid-template-columns:repeat(2,1fr)}}
+
+/* V3.6.1 — Blocchi Forza */
+.workBlockRow.strengthBlock{background:#f8f6ff;border-color:#ddd6fe}
+.strengthPill{background:#f4f0ff;border-color:#d9ccff}
+.workBlockRow .strengthOnly{display:none}
+.workBlockRow.strengthBlock .strengthOnly{display:block}
+.workBlockRow.strengthBlock .runOnly{display:none}
+
+/* V3.7 — blocchi completi e mesociclo */
+.blockButtons{flex-wrap:wrap}.workBlockRow{grid-template-columns:repeat(8,minmax(110px,1fr));overflow-x:auto}
+.workBlockRow.warmupBlock{background:#fff8ef;border-color:#f6d7ae}
+.workBlockRow.mobilityBlock{background:#f4fbf8;border-color:#cde9dc}
+.workBlockRow.techniqueBlock{background:#f3f8ff;border-color:#cbdcf5}
+.workBlockRow.freq_ampBlock{background:#fff6fb;border-color:#efcde0}
+.generalPill{background:#f7f7fb;border-color:#dddde8}
+@media(max-width:950px){.workBlockRow{grid-template-columns:repeat(4,minmax(120px,1fr))}}
+@media(max-width:620px){.workBlockRow{grid-template-columns:repeat(2,minmax(120px,1fr))}.blockButtons button{font-size:.72rem;padding:7px 8px}}
