@@ -178,3 +178,11 @@ body{background:radial-gradient(circle at top right,#fff0f2 0,#fff 32%,#fff8f9 1
 @media(max-width:760px){
  .trainingDetailGrid{grid-template-columns:repeat(2,1fr)}
 }
+
+/* V3.6 — Programma + performance automatica */
+.workBlocks{display:flex;flex-direction:column;gap:8px}.workBlockRow{display:grid;grid-template-columns:1.25fr .7fr .55fr .7fr .7fr 1fr 1fr auto;gap:7px;align-items:end;padding:10px;border:1px solid #ececef;border-radius:12px;background:#fcfcfd}.workBlockRow label{margin:0}.workBlockRow .blockNotes{min-width:120px}.workBlockRow .removeBlock{margin-bottom:2px}
+.structuredWorkCard{margin:12px 0;background:#fffafb}.volumePill{display:inline-block;padding:5px 8px;margin:3px;border-radius:999px;background:#fff0f2;border:1px solid #f3c7cf;font-size:.76rem}
+.programWeekHeader{margin:12px 0 8px;font-size:1.05rem}.programWeekGrid{display:grid;grid-template-columns:repeat(7,minmax(150px,1fr));gap:7px;overflow-x:auto;padding-bottom:8px}.programDay{min-height:210px;background:#f7f8fa;border:1px solid #e7e7ea;border-radius:14px;padding:9px}.programDayHead{display:flex;justify-content:space-between;text-transform:uppercase;font-size:.76rem;color:#666;margin-bottom:8px}.programDayHead span{font-weight:900;color:#111;font-size:1rem}.programSession{background:#fff;border:1px solid #ebd5d9;border-radius:11px;padding:9px;margin-bottom:8px}.programSession.programDone{border-color:#b7e2c2;background:#f4fbf6}.programSession small{display:block;color:#777;margin-top:2px}.programSession p{font-size:.78rem}.programBlocksView{margin:6px 0}.programRest{font-size:.77rem;color:#888;padding:10px 3px}.smallBtn{padding:7px 10px!important;font-size:.78rem!important}
+.autoPerfStats{margin-bottom:12px}.legacyPerf summary{cursor:pointer;font-weight:800}.trainingDetailText .volumePill{white-space:normal}
+@media(max-width:1050px){.workBlockRow{grid-template-columns:repeat(4,1fr)}.workBlockRow .blockNotes{min-width:0}.programWeekGrid{min-width:1120px}}
+@media(max-width:650px){.workBlockRow{grid-template-columns:repeat(2,1fr)}}
