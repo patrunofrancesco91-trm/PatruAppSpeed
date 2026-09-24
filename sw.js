@@ -1,4 +1,4 @@
-const CACHE='pst-v35-diary-bands-medical';
+const CACHE='pst-v351-training-details';
 const ASSETS=['./','./index.html','./styles.css','./app.js','./config.js','./manifest.json','./assets/logo.png','./assets/hero.jpg','./assets/icon-192.png','./assets/icon-512.png','./assets/favicon.png'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS))));
 self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request))));

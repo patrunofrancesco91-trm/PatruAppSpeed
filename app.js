@@ -464,6 +464,57 @@ async function getTrainingTypes(){
  const {data}=await sb.from("training_types").select("*").eq("active",true).order("name");
  return data||[];
 }
+
+function showTrainingDetailsModal(trainings,date,athleteId){
+ const old=document.getElementById("trainingDetailsOverlay");if(old)old.remove();
+ const items=(trainings||[]).map((x,i)=>`
+   <div class="trainingDetailBlock">
+     <div class="sectionTitle">
+       <div>
+         <span class="eyebrow">SEDUTA ${i+1}</span>
+         <h3>${x.training_types?.name||"Allenamento"}</h3>
+       </div>
+       <span class="badge redBadge">${x.session_load??"—"} AU</span>
+     </div>
+     <div class="trainingDetailGrid">
+       <div><span>Data</span><strong>${fmtDate(effectiveTrainingDate(x))}</strong></div>
+       <div><span>Durata</span><strong>${x.duration_min??"—"} min</strong></div>
+       <div><span>sRPE</span><strong>${x.srpe??"—"}/10</strong></div>
+       <div><span>Training Load</span><strong>${x.session_load??"—"} AU</strong></div>
+     </div>
+     <div class="trainingDetailText"><span>Lavoro svolto</span><p>${x.work_done||"—"}</p></div>
+     <div class="trainingDetailText"><span>Tempi / risultati</span><p>${x.times_results||"—"}</p></div>
+     <div class="trainingDetailText"><span>Dolore / problemi post</span><p>${x.pain_post||"—"}</p></div>
+     <div class="trainingDetailText"><span>Note</span><p>${x.notes||"—"}</p></div>
+     ${canCoachEdit()?`<div class="modalActions"><button class="editBtn" data-detail-edit="${x.id}">✏️ Modifica seduta</button></div>`:""}
+   </div>`).join("");
+
+ const el=document.createElement("div");
+ el.id="trainingDetailsOverlay";
+ el.className="modalOverlay";
+ el.innerHTML=`<div class="editModal card trainingDetailsModal">
+   <div class="sectionTitle">
+     <div><h2>Dettagli allenamento</h2><p class="muted">${fmtDate(date)}</p></div>
+     <button class="modalClose secondary">✕</button>
+   </div>
+   ${items}
+   <div class="modalActions">
+     <button class="secondary modalCloseBottom">Chiudi</button>
+   </div>
+ </div>`;
+ document.body.appendChild(el);
+ const close=()=>el.remove();
+ el.querySelector(".modalClose").onclick=close;
+ el.querySelector(".modalCloseBottom").onclick=close;
+ el.onclick=e=>{if(e.target===el)close()};
+ if(canCoachEdit()){
+   el.querySelectorAll("[data-detail-edit]").forEach(b=>b.onclick=async()=>{
+     const id=b.dataset.detailEdit;
+     close();
+     await editTrainingRecord(id,renderTraining);
+   });
+ }
+}
 async function renderTraining(){
  const athleteField=await athleteSelectHTML(), types=await getTrainingTypes();
  const aa=isStaff()?await getAthletes():[athleteProfile];
@@ -499,7 +550,7 @@ async function renderTraining(){
    const start=localISODate(first),end=localISODate(last),id=diaryAthleteId();
    $("#diaryMonthLabel").textContent=first.toLocaleDateString("it-IT",{month:"long",year:"numeric"});
    const [{data:t,error:te},{data:a,error:ae}]=await Promise.all([
-     sb.from("trainings").select("id,training_date,duration_min,srpe,session_load,work_done,training_types(name)").eq("athlete_id",id).gte("training_date",start).lte("training_date",end).order("training_date"),
+     sb.from("trainings").select("id,training_date,duration_min,srpe,session_load,work_done,times_results,pain_post,notes,training_types(name)").eq("athlete_id",id).gte("training_date",start).lte("training_date",end).order("training_date"),
      sb.from("attendance").select("attendance_date,status,expected_time,note").eq("athlete_id",id).gte("attendance_date",start).lte("attendance_date",end)
    ]);
    if(te||ae){$("#trainingDiary").innerHTML=`<div class="note">${(te||ae).message}</div>`;return}
@@ -529,7 +580,13 @@ async function renderTraining(){
    $("#trainingDiary").innerHTML=`<div class="diaryWeekdays">${["Lun","Mar","Mer","Gio","Ven","Sab","Dom"].map(x=>`<span>${x}</span>`).join("")}</div><div class="diaryGrid">${cells.join("")}</div>
    <div class="diaryLegend"><span>🏃 Seduta registrata</span><span>🟡 Presente: seduta da registrare</span><span>❓ Da confermare</span><span>○ Riposo</span></div>`;
    document.querySelectorAll("[data-diary-date]").forEach(b=>b.onclick=()=>{
-     $("#trainingDate").value=b.dataset.diaryDate;
+     const date=b.dataset.diaryDate;
+     const dayTrainings=byTrain[date]||[];
+     if(dayTrainings.length){
+       showTrainingDetailsModal(dayTrainings,date,id);
+       return;
+     }
+     $("#trainingDate").value=date;
      if(isStaff()&&$("#athleteId"))$("#athleteId").value=id;
      $("#trainingForm").scrollIntoView({behavior:"smooth",block:"start"});
    });

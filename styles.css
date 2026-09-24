@@ -164,3 +164,17 @@ body{background:radial-gradient(circle at top right,#fff0f2 0,#fff 32%,#fff8f9 1
 .diaryLegend{display:flex;gap:12px;flex-wrap:wrap;margin-top:10px;font-size:.78rem;color:#555}
 .referenceChart .lineChart{color:#c8102e}.referenceBand{fill:rgba(34,197,94,.18);stroke:rgba(22,163,74,.55);stroke-width:1.2}.referenceLegend{display:flex;align-items:center;gap:7px;margin-top:8px;font-size:.78rem;color:#444}.referenceSwatch{width:24px;height:10px;border-radius:4px;background:rgba(34,197,94,.2);border:1px solid rgba(22,163,74,.55)}.monitoringNote{font-size:.72rem;color:#6b7280;margin:7px 0 0}
 @media(max-width:760px){.diaryWeekdays,.diaryGrid{grid-template-columns:repeat(7,minmax(92px,1fr))}.diaryGrid{min-width:700px}.diaryDay{min-height:104px}.monthNav{justify-content:flex-start}}
+
+/* V3.5.1 — Dettagli seduta dal calendario */
+.trainingDetailsModal{width:min(760px,96vw)}
+.trainingDetailBlock{border:1px solid #ececef;border-radius:14px;padding:16px;margin:12px 0;background:#fff}
+.trainingDetailBlock+.trainingDetailBlock{margin-top:16px}
+.trainingDetailGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0}
+.trainingDetailGrid>div{background:#faf7f8;border:1px solid #eee;border-radius:10px;padding:10px}
+.trainingDetailGrid span,.trainingDetailText span{display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:#777;font-weight:800}
+.trainingDetailGrid strong{display:block;margin-top:3px;font-size:1rem}
+.trainingDetailText{margin-top:10px}
+.trainingDetailText p{margin:4px 0 0;white-space:pre-wrap;line-height:1.45}
+@media(max-width:760px){
+ .trainingDetailGrid{grid-template-columns:repeat(2,1fr)}
+}
