@@ -84,6 +84,7 @@ const toast=t=>{const x=$("#toast");x.textContent=t;x.classList.remove("hidden")
 const isStaff=()=>["coach","doctor","assistant_coach"].includes(profile?.role);
 const canCoachEdit=()=>["coach","assistant_coach"].includes(profile?.role);
 const canManageAttendance=()=>["coach","assistant_coach"].includes(profile?.role);
+const canManageInjuries=()=>["coach","assistant_coach","doctor"].includes(profile?.role);
 
 async function deleteCoachRecord(table,id,rerender,label="dato"){
  if(!canCoachEdit())return;
@@ -153,6 +154,45 @@ async function editRaceRecord(id,after){
   const extras={...(x.extras||{})};(x.race_types?.fields||[]).forEach(k=>extras[k]=v[`extra_${k}`]);
   const {error}=await sb.from("races").update({race_date:v.race_date,meeting:v.meeting,result:+v.result,extras}).eq("id",id);
   if(error){toast(error.message);return false}toast("Gara modificata");await after();
+ });
+}
+
+async function editInjuryRecord(id,after){
+ const [{data:x,error},{data:allFields}]=await Promise.all([
+   sb.from("injuries").select("*").eq("id",id).single(),
+   Promise.resolve(await getCustomFields("injury"))
+ ]);
+ if(error)return toast(error.message);
+ const fields=[
+  {key:"start_date",label:"Data inizio",type:"date",value:x.start_date},
+  {key:"site",label:"Sede",value:x.site||""},
+  {key:"issue_type",label:"Problematica / diagnosi riferita",value:x.issue_type||""},
+  {key:"pain_score",label:"Dolore 0–10",type:"number",value:x.pain_score??0},
+  {key:"limitation",label:"Limitazione",type:"select",value:x.limitation||"none",options:[
+   {value:"none",label:"Nessuna"},{value:"reduced",label:"Allenamento ridotto"},{value:"stop",label:"Stop allenamento"}
+  ]},
+  {key:"days_lost",label:"Giorni persi",type:"number",value:x.days_lost??0},
+  {key:"status",label:"Stato",type:"select",value:x.status||"active",options:[
+   {value:"active",label:"Attivo"},{value:"recovering",label:"In recupero"},{value:"resolved",label:"Risolto"}
+  ]},
+  {key:"return_date",label:"Data rientro",type:"date",value:x.return_date||""},
+  {key:"notes",label:"Note / trattamento",type:"textarea",value:x.notes||""}
+ ];
+ (allFields||[]).forEach(f=>fields.push({
+   key:`extra_${f.field_key}`,label:f.label,
+   type:f.field_type==="textarea"?"textarea":f.field_type==="number"?"number":f.field_type==="date"?"date":"text",
+   value:(x.extras||{})[f.field_key]??""
+ }));
+ openEditModal("Modifica problematica / infortunio",fields,async v=>{
+   const extras={...(x.extras||{})};
+   (allFields||[]).forEach(f=>extras[f.field_key]=v[`extra_${f.field_key}`]);
+   const {error}=await sb.from("injuries").update({
+    start_date:v.start_date,site:v.site.trim(),issue_type:v.issue_type.trim(),
+    pain_score:+v.pain_score,limitation:v.limitation,days_lost:+v.days_lost,
+    status:v.status,return_date:v.return_date||null,notes:v.notes,extras
+   }).eq("id",id);
+   if(error){toast(error.message);return false}
+   toast("Registro infortuni aggiornato");await after();
  });
 }
 async function getAthletes(){
@@ -426,32 +466,92 @@ async function getTrainingTypes(){
 }
 async function renderTraining(){
  const athleteField=await athleteSelectHTML(), types=await getTrainingTypes();
- view.innerHTML=`<div class="card"><h2>Registra allenamento</h2><form id="trainingForm">${athleteField}
+ const aa=isStaff()?await getAthletes():[athleteProfile];
+ view.innerHTML=`<div class="card trainingDiaryCard">
+   <div class="sectionTitle"><div><h2>Diario di allenamento</h2><p class="muted">Calendario mensile: sedute registrate, riposo e presenza prevista nello stesso colpo d'occhio.</p></div><span class="badge redBadge">DIARIO</span></div>
+   <div class="grid two diaryToolbar">
+     ${isStaff()?`<label>Atleta<select id="diaryAth">${aa.map(a=>`<option value="${a.id}">${a.display_name}</option>`).join("")}</select></label>`:""}
+     <div class="monthNav"><button class="secondary" id="diaryPrev">←</button><strong id="diaryMonthLabel"></strong><button class="secondary" id="diaryNext">→</button><button class="secondary" id="diaryToday">Oggi</button></div>
+   </div>
+   <div id="trainingDiary"></div>
+ </div>
+ <div class="card"><h2>Registra allenamento</h2><form id="trainingForm">${athleteField}
  <label>Data allenamento<input type="date" id="trainingDate" value="${localISODate()}" required></label>
  <label>Tipo seduta<select id="trainingType">${types.map(x=>`<option value="${x.id}">${x.name}</option>`).join("")}</select></label>
  <label>Lavoro reale svolto<textarea id="workDone" placeholder="Serie, ripetizioni, distanze, recuperi, carichi..."></textarea></label>
  <label>Tempi / risultati principali<textarea id="timesResults"></textarea></label>
  <div class="grid two"><label>Durata (min)<input type="number" id="duration" min="1" required></label><label>Session-RPE CR10
  <select id="srpe" required>
-  <option value="0">0 — Riposo / nessuno sforzo</option>
-  <option value="1">1 — Molto, molto facile</option>
-  <option value="2">2 — Facile</option>
-  <option value="3">3 — Moderato</option>
-  <option value="4">4 — Moderatamente impegnativo</option>
-  <option value="5">5 — Impegnativo</option>
-  <option value="6">6 — Molto impegnativo</option>
-  <option value="7">7 — Molto duro</option>
-  <option value="8">8 — Durissimo</option>
-  <option value="9">9 — Quasi massimale</option>
-  <option value="10">10 — Massimale</option>
+  <option value="0">0 — Riposo / nessuno sforzo</option><option value="1">1 — Molto, molto facile</option><option value="2">2 — Facile</option>
+  <option value="3">3 — Moderato</option><option value="4">4 — Moderatamente impegnativo</option><option value="5">5 — Impegnativo</option>
+  <option value="6">6 — Molto impegnativo</option><option value="7">7 — Molto duro</option><option value="8">8 — Durissimo</option>
+  <option value="9">9 — Quasi massimale</option><option value="10">10 — Massimale</option>
  </select></label></div>
  <label>Dolore / problemi post<textarea id="painPost"></textarea></label><label>Note<textarea id="trainingNotes"></textarea></label>
  <button class="primary">Salva allenamento</button></form></div><div id="trainRecent"></div>`;
+
+ let diaryDate=new Date();diaryDate.setDate(1);diaryDate.setHours(12,0,0,0);
+ const diaryAthleteId=()=>isStaff()?$("#diaryAth").value:athleteProfile.id;
+
+ async function drawDiary(){
+   const y=diaryDate.getFullYear(),m=diaryDate.getMonth();
+   const first=new Date(y,m,1,12),last=new Date(y,m+1,0,12);
+   const start=localISODate(first),end=localISODate(last),id=diaryAthleteId();
+   $("#diaryMonthLabel").textContent=first.toLocaleDateString("it-IT",{month:"long",year:"numeric"});
+   const [{data:t,error:te},{data:a,error:ae}]=await Promise.all([
+     sb.from("trainings").select("id,training_date,duration_min,srpe,session_load,work_done,training_types(name)").eq("athlete_id",id).gte("training_date",start).lte("training_date",end).order("training_date"),
+     sb.from("attendance").select("attendance_date,status,expected_time,note").eq("athlete_id",id).gte("attendance_date",start).lte("attendance_date",end)
+   ]);
+   if(te||ae){$("#trainingDiary").innerHTML=`<div class="note">${(te||ae).message}</div>`;return}
+   const byTrain={};(t||[]).forEach(x=>(byTrain[x.training_date]??=[]).push(x));
+   const byAtt=new Map((a||[]).map(x=>[x.attendance_date,x]));
+   const offset=(first.getDay()+6)%7; // Monday=0
+   const total=Math.ceil((offset+last.getDate())/7)*7;
+   const cells=[];
+   for(let i=0;i<total;i++){
+     const d=new Date(y,m,1-offset+i,12),iso=localISODate(d),inMonth=d.getMonth()===m;
+     const tr=byTrain[iso]||[],att=byAtt.get(iso),future=d>new Date(new Date().setHours(23,59,59,999));
+     let body="",cls="";
+     if(tr.length){
+       cls="hasTraining";
+       body=tr.map(x=>`<div class="diaryTrainingChip"><b>${x.training_types?.name||"Allenamento"}</b><small>${x.duration_min}′ · RPE ${x.srpe} · TL ${x.session_load} AU</small></div>`).join("");
+     }else if(att?.status==="present"){
+       cls="plannedPresent"; body=`<div class="diaryState">🟡 Presente${att.expected_time?` · ${String(att.expected_time).slice(0,5)}`:""}<small>Allenamento da registrare</small></div>`;
+     }else if(att?.status==="maybe"){
+       cls="plannedMaybe"; body=`<div class="diaryState">❓ Da confermare${att.expected_time?` · ${String(att.expected_time).slice(0,5)}`:""}</div>`;
+     }else{
+       cls="restDay"; body=`<div class="diaryState">○ Riposo${att?.status==="absent"?"":" / nessuna seduta"}</div>`;
+     }
+     cells.push(`<button class="diaryDay ${inMonth?"":"outsideMonth"} ${cls}" data-diary-date="${iso}" ${inMonth?"":"tabindex=-1"}>
+       <span class="diaryDayNum">${d.getDate()}</span>${body}
+     </button>`);
+   }
+   $("#trainingDiary").innerHTML=`<div class="diaryWeekdays">${["Lun","Mar","Mer","Gio","Ven","Sab","Dom"].map(x=>`<span>${x}</span>`).join("")}</div><div class="diaryGrid">${cells.join("")}</div>
+   <div class="diaryLegend"><span>🏃 Seduta registrata</span><span>🟡 Presente: seduta da registrare</span><span>❓ Da confermare</span><span>○ Riposo</span></div>`;
+   document.querySelectorAll("[data-diary-date]").forEach(b=>b.onclick=()=>{
+     $("#trainingDate").value=b.dataset.diaryDate;
+     if(isStaff()&&$("#athleteId"))$("#athleteId").value=id;
+     $("#trainingForm").scrollIntoView({behavior:"smooth",block:"start"});
+   });
+ }
+ $("#diaryPrev").onclick=async()=>{diaryDate.setMonth(diaryDate.getMonth()-1);await drawDiary()};
+ $("#diaryNext").onclick=async()=>{diaryDate.setMonth(diaryDate.getMonth()+1);await drawDiary()};
+ $("#diaryToday").onclick=async()=>{diaryDate=new Date();diaryDate.setDate(1);diaryDate.setHours(12,0,0,0);await drawDiary()};
+ if(isStaff())$("#diaryAth").onchange=async()=>{
+   if($("#athleteId"))$("#athleteId").value=$("#diaryAth").value;
+   await drawDiary();
+ };
+ if(isStaff()&&$("#athleteId"))$("#athleteId").onchange=async()=>{
+   if($("#diaryAth"))$("#diaryAth").value=$("#athleteId").value;
+   await drawDiary();
+ };
+
  $("#trainingForm").onsubmit=async e=>{
    e.preventDefault();
    const payload={athlete_id:$("#athleteId").value,training_date:$("#trainingDate").value,training_type_id:$("#trainingType").value,duration_min:+$("#duration").value,srpe:+$("#srpe").value,work_done:$("#workDone").value,times_results:$("#timesResults").value,pain_post:$("#painPost").value,notes:$("#trainingNotes").value};
    const {error}=await sb.from("trainings").insert(payload);if(error)return toast(error.message);toast("Allenamento salvato");await renderTraining();
  };
+ await drawDiary();
  await renderRecentTraining();
 }
 async function renderRecentTraining(){
@@ -697,7 +797,8 @@ async function drawTrainingCompare(id,days){
  const redraw=()=>{
   const typ=$("#cmpTrainType").value,metric=$("#cmpTrainMetric").value,list=all.filter(x=>!typ||x.training_types?.name===typ);
   const opts=list.map((x,i)=>`<option value="${x.id}">${fmtDate(effectiveTrainingDate(x))} · ${x.training_types?.name||""} · TL ${x.session_load}</option>`).join("");
-  $("#trainingCompareInner").innerHTML=`${simpleLineChart(list.map(x=>({label:new Date(x.recorded_at).toLocaleDateString("it-IT",{day:"2-digit",month:"2-digit"}),value:Number(x[metric]||0)})),metric==="session_load"?"Training Load":metric==="srpe"?"sRPE":"Durata",metric==="session_load"?"AU":metric==="duration_min"?"min":"")}
+  const tlRef=trainingLoadReferenceBand(all);
+  $("#trainingCompareInner").innerHTML=`${simpleLineChart(list.map(x=>({label:new Date(x.recorded_at).toLocaleDateString("it-IT",{day:"2-digit",month:"2-digit"}),value:Number(x[metric]||0)})),metric==="session_load"?"Training Load":metric==="srpe"?"sRPE":"Durata",metric==="session_load"?"AU":metric==="duration_min"?"min":"")}${metric==="session_load"?referenceBandLineChart(tlRef.weeks.slice(-12),"Carico settimanale · fascia personale","AU",tlRef.band):""}
   <div class="card innerCard compareDirect"><h3>Confronto diretto di due sedute</h3><div class="grid two"><label>Seduta A<select id="cmpSessionA">${opts}</select></label><label>Seduta B<select id="cmpSessionB">${opts}</select></label></div><div id="directSessionCompare"></div></div>
   <div class="tableWrap historyGrid"><table><thead><tr><th>Data</th><th>Tipo</th><th>Durata</th><th>sRPE</th><th>TL</th><th>Lavoro</th><th>Tempi</th></tr></thead><tbody>${list.slice().reverse().map(x=>`<tr><td>${fmtDate(effectiveTrainingDate(x))}</td><td><b>${x.training_types?.name||""}</b></td><td>${x.duration_min} min</td><td>${x.srpe}</td><td><b>${x.session_load} AU</b></td><td>${x.work_done||"—"}</td><td>${x.times_results||"—"}</td></tr>`).join("")||'<tr><td colspan="7">Nessun allenamento</td></tr>'}</tbody></table></div>`;
   const direct=()=>{const a=list.find(x=>x.id===$("#cmpSessionA")?.value),b=list.find(x=>x.id===$("#cmpSessionB")?.value);if(!a||!b)return;const d=(bv,av)=>av?((bv-av)/Math.abs(av))*100:null;$("#directSessionCompare").innerHTML=`<div class="comparisonMatrix"><div></div><b>Seduta A</b><b>Seduta B</b><b>Δ B vs A</b><span>Durata</span><strong>${a.duration_min} min</strong><strong>${b.duration_min} min</strong>${changeBadge(d(Number(b.duration_min),Number(a.duration_min)))}<span>sRPE</span><strong>${a.srpe}</strong><strong>${b.srpe}</strong>${changeBadge(d(Number(b.srpe),Number(a.srpe)))}<span>Training Load</span><strong>${a.session_load} AU</strong><strong>${b.session_load} AU</strong>${changeBadge(d(Number(b.session_load),Number(a.session_load)))}</div>`};
@@ -709,7 +810,7 @@ async function drawWellnessCompare(id,days){
  const {data}=await sb.from("wellness").select("*").eq("athlete_id",id).order("wellness_date",{ascending:true});
  const all=filterByDays(data||[],days,"recorded_at");
  $("#compareBody").innerHTML=`<label class="narrowField">Metrica<select id="cmpWellMetric"><option value="score">Score totale</option><option value="sleep">Sonno</option><option value="fatigue">Stanchezza</option><option value="doms">DOMS</option><option value="stress">Stress</option></select></label><div id="wellCmpInner"></div>`;
- const draw=()=>{const m=$("#cmpWellMetric").value,u=m==="score"?"/20":"/5";$("#wellCmpInner").innerHTML=`${simpleLineChart(all.map(x=>({label:fmtDate(effectiveWellDate(x)),value:Number(x[m]||0)})),"Wellness — "+$("#cmpWellMetric").selectedOptions[0].text,u)}<div class="tableWrap historyGrid"><table><thead><tr><th>Data</th><th>Sonno</th><th>Stanchezza</th><th>DOMS</th><th>Stress</th><th>Score</th><th>Dolore</th></tr></thead><tbody>${all.slice().reverse().map(x=>`<tr><td>${fmtDate(effectiveWellDate(x))}</td><td>${x.sleep}</td><td>${x.fatigue}</td><td>${x.doms}</td><td>${x.stress}</td><td><b>${x.score}/20</b></td><td>${x.pain||"—"}</td></tr>`).join("")||'<tr><td colspan="7">Nessun dato</td></tr>'}</tbody></table></div>`};$("#cmpWellMetric").onchange=draw;draw();
+ const draw=()=>{const m=$("#cmpWellMetric").value,u=m==="score"?"/20":"/5";$("#wellCmpInner").innerHTML=`${m==="score"?referenceBandLineChart(all.map(x=>({label:fmtDate(effectiveWellDate(x)),value:Number(x[m]||0)})),"Wellness — "+$("#cmpWellMetric").selectedOptions[0].text,u,wellnessReferenceBand(all),{fixedMin:4,fixedMax:20}):simpleLineChart(all.map(x=>({label:fmtDate(effectiveWellDate(x)),value:Number(x[m]||0)})),"Wellness — "+$("#cmpWellMetric").selectedOptions[0].text,u)}<div class="tableWrap historyGrid"><table><thead><tr><th>Data</th><th>Sonno</th><th>Stanchezza</th><th>DOMS</th><th>Stress</th><th>Score</th><th>Dolore</th></tr></thead><tbody>${all.slice().reverse().map(x=>`<tr><td>${fmtDate(effectiveWellDate(x))}</td><td>${x.sleep}</td><td>${x.fatigue}</td><td>${x.doms}</td><td>${x.stress}</td><td><b>${x.score}/20</b></td><td>${x.pain||"—"}</td></tr>`).join("")||'<tr><td colspan="7">Nessun dato</td></tr>'}</tbody></table></div>`};$("#cmpWellMetric").onchange=draw;draw();
 }
 async function drawTestCompare(id,days){
  const {data}=await sb.from("test_results").select("*,tests(name,unit,higher_better)").eq("athlete_id",id).order("recorded_at",{ascending:true});
@@ -722,25 +823,26 @@ async function renderInjuries(){
  const allFields=await getCustomFields("injury");
  const fields=isStaff()?allFields:allFields.filter(f=>f.athlete_visible);
  const athleteField=isStaff()?`<label>Atleta<select id="injAth">${aa.map(a=>`<option value="${a.id}">${a.display_name}</option>`).join("")}</select></label>`:`<p><b>Atleta:</b> ${athleteProfile.display_name}</p>`;
- view.innerHTML=`<div class="card"><div class="sectionTitle"><div><h2>Storico infortuni & problematiche</h2><p class="muted">Registro separato dal wellness quotidiano.</p></div><span class="badge redBadge">MEDICAL LOG</span></div>
- ${profile.role==="coach"?`<form id="injuryForm">${athleteField}
+ view.innerHTML=`<div class="card"><div class="sectionTitle"><div><h2>Storico infortuni & problematiche</h2><p class="muted">Registro condiviso tra staff tecnico e medico.</p></div><span class="badge redBadge">MEDICAL LOG</span></div>
+ ${canManageInjuries()?`<form id="injuryForm">${athleteField}
  <div class="grid two"><label>Data inizio<input type="date" id="injStart" value="${isoDateToday()}" required></label><label>Sede<input id="injSite" placeholder="es. femorale dx, caviglia sx" required></label></div>
  <label>Problematica / diagnosi riferita<input id="injType" required></label>
  <div class="grid three"><label>Dolore 0–10<input type="number" id="injPain" min="0" max="10" value="0"></label><label>Limitazione<select id="injLimit"><option value="none">Nessuna</option><option value="reduced">Allenamento ridotto</option><option value="stop">Stop allenamento</option></select></label><label>Giorni persi<input type="number" id="injDays" min="0" value="0"></label></div>
  <div class="grid two"><label>Stato<select id="injStatus"><option value="active">Attivo</option><option value="recovering">In recupero</option><option value="resolved">Risolto</option></select></label><label>Data rientro<input type="date" id="injReturn"></label></div>
  ${renderCustomFields(fields,"injcf")}
  <label>Note / trattamento<textarea id="injNotes"></textarea></label><button class="primary">Salva problematica</button>
- </form>`:`<p class="note">Questa sezione è consultabile dall'atleta. L'inserimento e l'aggiornamento del registro sono riservati al coach.</p>`}
- ${profile.role==="doctor"?athleteField:""}
+ </form>`:`<p class="note">Registro consultabile in sola lettura dall'atleta.</p>`}
  </div><div id="injuryList"></div>`;
  async function draw(){
   const id=isStaff()?$("#injAth").value:athleteProfile.id;
-  const {data}=await sb.from("injuries").select("*").eq("athlete_id",id).order("start_date",{ascending:false});
+  const {data,error}=await sb.from("injuries").select("*").eq("athlete_id",id).order("start_date",{ascending:false});
+  if(error){$("#injuryList").innerHTML=`<div class="card note">${error.message}</div>`;return}
   $("#injuryList").innerHTML=`<div class="card"><div class="stats">${stat("Totale",(data||[]).length)}${stat("Attivi",(data||[]).filter(x=>x.status==="active").length)}${stat("Giorni persi",(data||[]).reduce((s,x)=>s+Number(x.days_lost||0),0))}</div>
-  <div class="tableWrap historyGrid"><table><thead><tr><th>Inizio</th><th>Sede</th><th>Problematica</th><th>Dolore</th><th>Limitazione</th><th>Giorni persi</th><th>Stato</th><th>Rientro</th><th>Campi extra</th><th>Note</th></tr></thead><tbody>${(data||[]).map(x=>`<tr><td>${x.start_date}</td><td><b>${x.site}</b></td><td>${x.issue_type}</td><td>${x.pain_score}/10</td><td>${x.limitation}</td><td>${x.days_lost}</td><td><span class="badge ${x.status==="resolved"?"ok":x.status==="active"?"danger":""}">${x.status}</span></td><td>${x.return_date||"—"}</td><td>${customExtrasHTML(x.extras,fields)}</td><td>${x.notes||"—"}</td></tr>`).join("")||'<tr><td colspan="10">Nessuna problematica registrata</td></tr>'}</tbody></table></div></div>`;
+  <div class="tableWrap historyGrid"><table><thead><tr><th>Inizio</th><th>Sede</th><th>Problematica</th><th>Dolore</th><th>Limitazione</th><th>Giorni persi</th><th>Stato</th><th>Rientro</th><th>Campi extra</th><th>Note</th>${canManageInjuries()?"<th>Azioni</th>":""}</tr></thead><tbody>${(data||[]).map(x=>`<tr><td>${x.start_date}</td><td><b>${x.site}</b></td><td>${x.issue_type}</td><td>${x.pain_score}/10</td><td>${x.limitation}</td><td>${x.days_lost}</td><td><span class="badge ${x.status==="resolved"?"ok":x.status==="active"?"danger":""}">${x.status}</span></td><td>${x.return_date||"—"}</td><td>${customExtrasHTML(x.extras,fields)}</td><td>${x.notes||"—"}</td>${canManageInjuries()?`<td><button class="editBtn" data-edit-injury="${x.id}">✏️ Modifica</button></td>`:""}</tr>`).join("")||'<tr><td colspan="11">Nessuna problematica registrata</td></tr>'}</tbody></table></div></div>`;
+  if(canManageInjuries())document.querySelectorAll("[data-edit-injury]").forEach(b=>b.onclick=()=>editInjuryRecord(b.dataset.editInjury,draw));
  }
  if(isStaff()) $("#injAth").onchange=draw;
- if(profile.role==="coach"){
+ if(canManageInjuries()){
   $("#injuryForm").onsubmit=async e=>{
    e.preventDefault();
    const {error}=await sb.from("injuries").insert({athlete_id:$("#injAth").value,start_date:$("#injStart").value,site:$("#injSite").value.trim(),issue_type:$("#injType").value.trim(),pain_score:+$("#injPain").value,limitation:$("#injLimit").value,days_lost:+$("#injDays").value,status:$("#injStatus").value,return_date:$("#injReturn").value||null,extras:collectCustomFields(fields,"injcf"),notes:$("#injNotes").value});
@@ -749,7 +851,6 @@ async function renderInjuries(){
  }
  await draw();
 }
-
 async function renderReport(){
  const aa=isStaff()?await getAthletes():[athleteProfile];
  const allFields=await getCustomFields("report");
@@ -932,6 +1033,7 @@ function historyTraining(current,all,days){
    ${stat("Durata",`${Math.round(dur)} min`)}
  </div>
  ${days?`<div class="comparisonCard"><div><span class="muted">Periodo precedente</span><b>${Math.round(previousTL)} AU</b></div><div class="compareArrow">→</div><div><span class="muted">Periodo attuale</span><b>${Math.round(tl)} AU</b></div><div class="right">${previousTL===0&&tl>0?'<span class="badge ok">Nuovo carico</span>':changeBadge(delta)}</div></div>`:""}
+ ${(()=>{const ref=trainingLoadReferenceBand(all);return referenceBandLineChart(ref.weeks.slice(-12),"Training Load settimanale · fascia personale","AU",ref.band)})()}
  ${simpleBarChart(points,"Training Load giorno per giorno","AU")}
  <div class="tableWrap historyGrid"><table><thead><tr><th>Data</th><th>Tipo</th><th>Lavoro svolto</th><th>Tempi</th><th>Durata</th><th>sRPE</th><th>TL</th><th>Dolore</th>${canCoachEdit()?"<th>Azioni</th>":""}</tr></thead><tbody>
  ${current.slice().reverse().map(x=>`<tr><td>${fmtDate(effectiveTrainingDate(x))}</td><td><b>${x.training_types?.name||""}</b></td><td>${x.work_done||"—"}</td><td>${x.times_results||"—"}</td><td>${x.duration_min} min</td><td>${x.srpe}</td><td><b>${x.session_load} AU</b></td><td>${x.pain_post||"—"}</td>${canCoachEdit()?`<td><div class="rowActions"><button class="editBtn" data-hist-edit-training="${x.id}">✏️</button><button class="dangerBtn" data-hist-del-training="${x.id}">🗑️</button></div></td>`:""}</tr>`).join("")||'<tr><td colspan="9">Nessun allenamento nel periodo</td></tr>'}
@@ -1006,8 +1108,58 @@ function historyWellness(current){
  const pain=current.filter(x=>String(x.pain||"").trim()).length;
  const series=current.map(x=>({label:fmtDate(effectiveWellDate(x)),value:Number(x.score||0)}));
  return `<div class="stats">${stat("Registrazioni",current.length)}${stat("Wellness medio",mean!==null?`${mean.toFixed(1)}/20`:"—")}${stat("Segnalazioni dolore",pain)}</div>
- ${series.length?simpleLineChart(series,"Wellness score","/20"):""}
+ ${series.length?referenceBandLineChart(series,"Wellness score · fascia personale","/20",wellnessReferenceBand(current),{fixedMin:4,fixedMax:20}):""}
  <div class="tableWrap historyGrid"><table><thead><tr><th>Data</th><th>Sonno</th><th>Stanchezza</th><th>DOMS</th><th>Stress</th><th>Score</th><th>Dolore</th>${canCoachEdit()?"<th>Azioni</th>":""}</tr></thead><tbody>${current.slice().reverse().map(x=>`<tr><td>${fmtDate(effectiveWellDate(x))}</td><td>${x.sleep}</td><td>${x.fatigue}</td><td>${x.doms}</td><td>${x.stress}</td><td><b>${x.score}/20</b></td><td>${x.pain||"—"}</td>${canCoachEdit()?`<td><div class="rowActions"><button class="editBtn" data-hist-edit-well="${x.id}">✏️</button><button class="dangerBtn" data-hist-del-well="${x.id}">🗑️</button></div></td>`:""}</tr>`).join("")||'<tr><td colspan="8">Nessun wellness nel periodo</td></tr>'}</tbody></table></div>`;
+}
+
+function meanSD(values){
+ const v=values.map(Number).filter(Number.isFinite);
+ if(!v.length)return {mean:0,sd:0};
+ const mean=v.reduce((a,b)=>a+b,0)/v.length;
+ const sd=Math.sqrt(v.reduce((s,x)=>s+(x-mean)**2,0)/v.length);
+ return {mean,sd};
+}
+function wellnessReferenceBand(records){
+ const vals=[...records].sort((a,b)=>new Date(effectiveWellDate(a))-new Date(effectiveWellDate(b))).slice(-28).map(x=>Number(x.score)).filter(Number.isFinite);
+ if(vals.length<3)return null;
+ const {mean,sd}=meanSD(vals),spread=sd||0.75;
+ return {low:Math.max(4,mean-spread),high:Math.min(20,mean+spread),label:`Baseline personale ${vals.length} rilevazioni`};
+}
+function mondayISO(date){
+ const d=new Date(date+"T12:00:00"),day=d.getDay()||7;d.setDate(d.getDate()-day+1);return localISODate(d);
+}
+function weeklyTrainingLoadSeries(records){
+ const map={};
+ records.forEach(x=>{const k=mondayISO(effectiveTrainingDate(x));map[k]=(map[k]||0)+Number(x.session_load||0)});
+ return Object.entries(map).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,value])=>({key:k,label:`Sett. ${fmtDate(k)}`,value}));
+}
+function trainingLoadReferenceBand(records){
+ const weeks=weeklyTrainingLoadSeries(records);
+ if(weeks.length<3)return {weeks,band:null};
+ const base=weeks.slice(-5,-1).length>=3?weeks.slice(-5,-1):weeks.slice(0,-1);
+ const {mean,sd}=meanSD(base.map(x=>x.value)),spread=sd||Math.max(mean*.15,1);
+ return {weeks,band:{low:Math.max(0,mean-spread),high:mean+spread,label:`Carico abituale · ${base.length} settimane`}};
+}
+function referenceBandLineChart(points,title,unit,band,opts={}){
+ if(points.length<2)return simpleLineChart(points,title,unit,!!opts.lowerBetter);
+ const vals=points.map(p=>Number(p.value)).filter(Number.isFinite);
+ const all=band?[...vals,band.low,band.high]:vals;
+ const min=opts.fixedMin??Math.min(...all),max=opts.fixedMax??Math.max(...all),range=Math.max(max-min,0.0001);
+ const w=760,h=220,pad=30;
+ const y=v=>pad+(max-Number(v))/range*(h-pad*2);
+ const coords=points.map((p,i)=>({x:pad+i*((w-pad*2)/Math.max(points.length-1,1)),y:y(p.value),p}));
+ const poly=coords.map(c=>`${c.x},${c.y}`).join(" ");
+ const bandY=band?Math.min(y(band.high),y(band.low)):0,bandH=band?Math.abs(y(band.low)-y(band.high)):0;
+ const first=vals[0],last=vals.at(-1),delta=pctChange(last,first,!!opts.lowerBetter);
+ return `<div class="chartCard referenceChart"><div class="sectionTitle"><h4>${title}</h4><div>${changeBadge(delta)} <span class="muted">${Number(first).toFixed(1)} → ${Number(last).toFixed(1)} ${unit}</span></div></div>
+ <svg class="lineChart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+   ${band?`<rect class="referenceBand" x="${pad}" y="${bandY}" width="${w-pad*2}" height="${Math.max(bandH,4)}" rx="5"/>`:""}
+   <polyline points="${poly}" fill="none" stroke="currentColor" stroke-width="3" vector-effect="non-scaling-stroke"/>
+   ${coords.map(c=>`<circle cx="${c.x}" cy="${c.y}" r="4.5" fill="currentColor"/>`).join("")}
+ </svg>
+ <div class="chartLabels"><span>${points[0].label}</span><span>${points.at(-1).label}</span></div>
+ ${band?`<div class="referenceLegend"><span class="referenceSwatch"></span><span>Fascia personale di riferimento: <b>${band.low.toFixed(1)}–${band.high.toFixed(1)} ${unit}</b> · ${band.label}</span></div>`:"<div class='note'>Servono più dati per costruire una fascia personale affidabile.</div>"}
+ <p class="monitoringNote">La fascia è individuale e descrittiva: supporta la lettura del trend, non è una soglia diagnostica né un limite universale.</p></div>`;
 }
 function simpleBarChart(points,title,unit){
  if(!points.length)return "";

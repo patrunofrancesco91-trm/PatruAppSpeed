@@ -154,3 +154,13 @@ body{background:radial-gradient(circle at top right,#fff0f2 0,#fff 32%,#fff8f9 1
 .attendanceCellBtn small,.attendanceRead small{font-size:.68rem;font-weight:800}.attendanceRead{min-height:48px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:1.3rem}
 .attPresent .attendanceCellBtn,.attPresent{background:#eef9f1}.attAbsent .attendanceCellBtn,.attAbsent{background:#fff0f1}.attMaybe .attendanceCellBtn,.attMaybe{background:#fff8e8}
 @media(max-width:760px){.weekNav button{padding:8px 10px}.weekTitle{font-size:1.08rem}.attendanceLegend{font-size:.78rem;gap:8px}}
+
+/* V3.5 — Diario calendario, fasce personali, medical edit */
+.trainingDiaryCard{overflow:hidden}.diaryToolbar{align-items:end}.monthNav{display:flex;align-items:center;gap:8px;justify-content:flex-end;flex-wrap:wrap}.monthNav strong{text-transform:capitalize;min-width:150px;text-align:center}
+.diaryWeekdays,.diaryGrid{display:grid;grid-template-columns:repeat(7,minmax(115px,1fr));gap:6px}.diaryWeekdays{margin:12px 0 6px;font-size:.76rem;font-weight:900;text-transform:uppercase;text-align:center;color:#666}
+.diaryGrid{min-width:875px}.trainingDiaryCard #trainingDiary{overflow-x:auto;padding-bottom:4px}.diaryDay{position:relative;min-height:118px;text-align:left;border:1px solid #e8e8ea;border-radius:13px;background:#fff;padding:28px 8px 8px;display:flex;flex-direction:column;gap:5px;color:#222}.diaryDay:hover{border-color:#c8102e;box-shadow:0 4px 14px rgba(200,16,46,.10)}
+.diaryDayNum{position:absolute;top:7px;right:9px;font-weight:900}.outsideMonth{opacity:.28}.hasTraining{background:#fff6f7}.plannedPresent{background:#fff9e9}.plannedMaybe{background:#fffaf0}.restDay{background:#f7f8fa}
+.diaryTrainingChip{background:#c8102e;color:#fff;border-radius:9px;padding:6px 7px;font-size:.77rem;line-height:1.15}.diaryTrainingChip small{display:block;margin-top:3px;color:#ffe5ea}.diaryState{font-size:.78rem;font-weight:800;display:flex;flex-direction:column;gap:4px}.diaryState small{font-weight:600;color:#777}
+.diaryLegend{display:flex;gap:12px;flex-wrap:wrap;margin-top:10px;font-size:.78rem;color:#555}
+.referenceChart .lineChart{color:#c8102e}.referenceBand{fill:rgba(34,197,94,.18);stroke:rgba(22,163,74,.55);stroke-width:1.2}.referenceLegend{display:flex;align-items:center;gap:7px;margin-top:8px;font-size:.78rem;color:#444}.referenceSwatch{width:24px;height:10px;border-radius:4px;background:rgba(34,197,94,.2);border:1px solid rgba(22,163,74,.55)}.monitoringNote{font-size:.72rem;color:#6b7280;margin:7px 0 0}
+@media(max-width:760px){.diaryWeekdays,.diaryGrid{grid-template-columns:repeat(7,minmax(92px,1fr))}.diaryGrid{min-width:700px}.diaryDay{min-height:104px}.monthNav{justify-content:flex-start}}
