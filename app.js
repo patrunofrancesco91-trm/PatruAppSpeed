@@ -592,7 +592,13 @@ async function renderProgram(){
    <div id="programBoard"></div>
  </div>
  ${canEditProgram()?`<div class="card"><h2>Programma una seduta</h2><form id="programForm">
-   ${isStaff()?`<label>Atleta<select id="programFormAth">${aa.map(a=>`<option value="${a.id}">${a.display_name}</option>`).join("")}</select></label>`:""}
+   ${isStaff()?`<div class="multiAthleteBox">
+   <div class="sectionTitle"><div><h3>Assegna a più atleti</h3><p class="muted">Seleziona uno o più atleti per creare la stessa seduta nello stesso giorno.</p></div>
+   <div class="rowActions"><button type="button" class="secondary" id="selectAllProgramAth">Tutti</button><button type="button" class="secondary" id="clearAllProgramAth">Nessuno</button></div></div>
+   <div id="programAthleteChecks" class="athleteCheckGrid">
+     ${aa.map(a=>`<label class="athleteCheck"><input type="checkbox" class="programAthCheck" value="${a.id}"><span>${a.display_name}</span></label>`).join("")}
+   </div>
+ </div>`:""}
    <div class="grid two"><label>Data<input type="date" id="programDate" value="${localISODate()}" required></label>
    <label>Tipo seduta<select id="programType">${types.map(t=>`<option value="${t.id}">${t.name}</option>`).join("")}</select></label></div>
    <label>Titolo / focus<input id="programTitle" placeholder="es. Accelerazioni + tecnica"></label>
@@ -681,11 +687,20 @@ async function renderProgram(){
  $("#programNext").onclick=()=>{weekOffset++;sessionStorage.setItem("programWeekOffset",weekOffset);draw()};
  $("#programThis").onclick=()=>{weekOffset=0;sessionStorage.setItem("programWeekOffset",0);draw()};
  if(isStaff())$("#programAth").onchange=()=>{
-   if($("#programFormAth"))$("#programFormAth").value=$("#programAth").value;
+   document.querySelectorAll(".programAthCheck").forEach(c=>c.checked=false);
+   const c=document.querySelector(`.programAthCheck[value="${$("#programAth").value}"]`);
+   if(c)c.checked=true;
    draw();
  };
  if($("#programForm")){
    addBlockRow("programBlocks","program",{block_kind:"run",quality:"Accelerazione",sets:1,planned_reps:4,distance_m:30});
+   if(isStaff()){
+     const checks=()=>[...document.querySelectorAll(".programAthCheck")];
+     $("#selectAllProgramAth").onclick=()=>checks().forEach(c=>c.checked=true);
+     $("#clearAllProgramAth").onclick=()=>checks().forEach(c=>c.checked=false);
+     const activeId=$("#programAth")?.value;
+     if(activeId){const c=document.querySelector(`.programAthCheck[value="${activeId}"]`);if(c)c.checked=true;}
+   }
    $("#addProgramWarmupBlock").onclick=()=>addBlockRow("programBlocks","program",{block_kind:"warmup",exercise:"Corsa blanda + attivazione",duration_min:10,sets:1,planned_reps:1});
    $("#addProgramMobilityBlock").onclick=()=>addBlockRow("programBlocks","program",{block_kind:"mobility",exercise:"Mobilità dinamica",duration_min:8,sets:1,planned_reps:1});
    $("#addProgramTechniqueBlock").onclick=()=>addBlockRow("programBlocks","program",{block_kind:"technique",exercise:"Skip / dribble / gambe tese",sets:2,planned_reps:2});
@@ -694,15 +709,37 @@ async function renderProgram(){
    $("#addProgramStrengthBlock").onclick=()=>addBlockRow("programBlocks","program",{block_kind:"strength",quality:"Forza",exercise:"Squat",sets:4,planned_reps:4,load_kg:0});
    $("#programForm").onsubmit=async e=>{
      e.preventDefault();
-     const athleteId=isStaff()?$("#programFormAth").value:athleteProfile.id;
-     const {data:s,error}=await sb.from("planned_sessions").insert({
-       athlete_id:athleteId,session_date:$("#programDate").value,training_type_id:$("#programType").value,
-       title:$("#programTitle").value.trim(),notes:$("#programNotes").value,created_by:currentUser.id,status:"planned"
-     }).select("id").single();
-     if(error)return toast(error.message);
-     const blocks=collectBlockRows("programBlocks","program").map(x=>({planned_session_id:s.id,...x}));
-     if(blocks.length){const {error:be}=await sb.from("planned_blocks").insert(blocks);if(be)return toast(be.message)}
-     toast("Seduta programmata");await renderProgram();
+     const athleteIds=isStaff()
+       ? [...document.querySelectorAll(".programAthCheck:checked")].map(c=>c.value)
+       : [athleteProfile.id];
+     if(!athleteIds.length)return toast("Seleziona almeno un atleta.");
+
+     const baseBlocks=collectBlockRows("programBlocks","program");
+     if(!baseBlocks.length&&!$("#programTitle").value.trim()&&!$("#programNotes").value.trim())
+       return toast("Inserisci almeno un contenuto nella seduta.");
+
+     if(athleteIds.length>1&&!confirm(`Creare la stessa seduta per ${athleteIds.length} atleti?`))return;
+
+     for(const athleteId of athleteIds){
+       const {data:s,error}=await sb.from("planned_sessions").insert({
+         athlete_id:athleteId,
+         session_date:$("#programDate").value,
+         training_type_id:$("#programType").value,
+         title:$("#programTitle").value.trim(),
+         notes:$("#programNotes").value,
+         created_by:currentUser.id,
+         status:"planned"
+       }).select("id").single();
+       if(error)return toast(error.message);
+
+       if(baseBlocks.length){
+         const blocks=baseBlocks.map(x=>({planned_session_id:s.id,...x}));
+         const {error:be}=await sb.from("planned_blocks").insert(blocks);
+         if(be)return toast(be.message);
+       }
+     }
+     toast(`Seduta programmata per ${athleteIds.length} atleta/i`);
+     await renderProgram();
    };
  }
  await draw();

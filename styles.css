@@ -219,3 +219,10 @@ body{background:radial-gradient(circle at top right,#fff0f2 0,#fff 32%,#fff8f9 1
 .trainingManageActions{justify-content:flex-end;flex-wrap:wrap}
 .trainingVolumeModal{width:min(980px,96vw)}
 .trainingVolumeModal .workBlocks{max-height:58vh;overflow:auto;padding-right:4px}
+
+/* V3.7.4 — programmazione multi-atleta */
+.multiAthleteBox{border:1px solid #eadce0;background:#fffafb;border-radius:14px;padding:12px;margin-bottom:12px}
+.athleteCheckGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
+.athleteCheck{display:flex;align-items:center;gap:8px;border:1px solid #ececef;background:#fff;border-radius:10px;padding:10px;cursor:pointer}
+.athleteCheck input{width:auto;margin:0}.athleteCheck span{font-weight:700}
+.athleteCheck:has(input:checked){border-color:#c8102e;background:#fff0f2}
