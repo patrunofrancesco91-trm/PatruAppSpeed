@@ -577,6 +577,147 @@ function blocksSummaryHTML(blocks,actual=true){
  }).join(" ");
 }
 
+
+async function clonePlannedSessionToAthletes(session,athleteIds,dateOverride=null){
+ if(!["coach","assistant_coach"].includes(profile?.role))return false;
+ const blocks=session.planned_blocks||[];
+ for(const athleteId of athleteIds){
+   const {data:newS,error}=await sb.from("planned_sessions").insert({
+     athlete_id:athleteId,
+     session_date:dateOverride||session.session_date,
+     training_type_id:session.training_type_id,
+     title:session.title||"",
+     notes:session.notes||"",
+     status:"planned",
+     created_by:currentUser.id
+   }).select("id").single();
+   if(error){toast(error.message);return false}
+   if(blocks.length){
+     const payload=blocks.map(({id,planned_session_id,planned_volume_m,created_at,...b})=>({
+       planned_session_id:newS.id,...b
+     }));
+     const {error:be}=await sb.from("planned_blocks").insert(payload);
+     if(be){toast(be.message);return false}
+   }
+ }
+ return true;
+}
+
+async function editPlannedSession(session,after){
+ if(!["coach","assistant_coach"].includes(profile?.role))return;
+ const aa=await getAthletes();
+ const types=await getTrainingTypes();
+
+ const old=document.getElementById("plannedEditOverlay");
+ if(old)old.remove();
+
+ const el=document.createElement("div");
+ el.id="plannedEditOverlay";
+ el.className="modalOverlay";
+ el.innerHTML=`<div class="editModal card plannedEditModal">
+   <div class="sectionTitle">
+     <div><h2>Modifica seduta programmata</h2><p class="muted">${fmtDate(session.session_date)}</p></div>
+     <button class="modalClose secondary">✕</button>
+   </div>
+
+   <div class="grid two">
+     <label>Data<input type="date" id="editPlanDate" value="${session.session_date}" required></label>
+     <label>Tipo seduta<select id="editPlanType">${types.map(t=>`<option value="${t.id}" ${t.id===session.training_type_id?"selected":""}>${t.name}</option>`).join("")}</select></label>
+   </div>
+
+   <label>Titolo / focus<input id="editPlanTitle" value="${(session.title||"").replace(/"/g,"&quot;")}"></label>
+
+   <div class="sectionTitle">
+     <div><h3>Blocchi</h3><p class="muted">Puoi correggere, aggiungere o eliminare blocchi.</p></div>
+     <div class="rowActions blockButtons">
+       <button type="button" class="secondary" id="epWarmup">+ Riscaldamento</button>
+       <button type="button" class="secondary" id="epMobility">+ Mobilità</button>
+       <button type="button" class="secondary" id="epTechnique">+ Tecnica</button>
+       <button type="button" class="secondary" id="epFreq">+ Frequenza/Ampiezza</button>
+       <button type="button" class="secondary" id="epRun">+ Corsa</button>
+       <button type="button" class="secondary" id="epStrength">+ Forza</button>
+     </div>
+   </div>
+   <div id="editPlannedBlocks" class="workBlocks"></div>
+
+   <label>Note programma<textarea id="editPlanNotes">${session.notes||""}</textarea></label>
+
+   <div class="multiAthleteBox">
+     <div class="sectionTitle">
+       <div><h3>Aggiungi questa seduta ad altri atleti</h3><p class="muted">La seduta modificata verrà copiata anche agli atleti selezionati.</p></div>
+       <div class="rowActions"><button type="button" class="secondary" id="editPlanSelectAll">Tutti</button><button type="button" class="secondary" id="editPlanClearAll">Nessuno</button></div>
+     </div>
+     <div class="athleteCheckGrid">
+       ${aa.filter(a=>a.id!==session.athlete_id).map(a=>`<label class="athleteCheck"><input type="checkbox" class="editPlanAthCheck" value="${a.id}"><span>${a.display_name}</span></label>`).join("")}
+     </div>
+   </div>
+
+   <div class="modalActions">
+     <button type="button" class="secondary modalCancel">Annulla</button>
+     <button type="button" class="primary" id="savePlannedEdit">Salva modifiche</button>
+   </div>
+ </div>`;
+ document.body.appendChild(el);
+
+ const close=()=>el.remove();
+ el.querySelector(".modalClose").onclick=close;
+ el.querySelector(".modalCancel").onclick=close;
+ el.onclick=e=>{if(e.target===el)close()};
+
+ const add=(d={})=>addBlockRow("editPlannedBlocks","program",d);
+ (session.planned_blocks||[]).forEach(b=>add(b));
+
+ $("#epWarmup").onclick=()=>add({block_kind:"warmup",exercise:"Corsa blanda + attivazione",duration_min:10,sets:1,planned_reps:1});
+ $("#epMobility").onclick=()=>add({block_kind:"mobility",exercise:"Mobilità dinamica",duration_min:8,sets:1,planned_reps:1});
+ $("#epTechnique").onclick=()=>add({block_kind:"technique",exercise:"Skip / dribble / gambe tese",sets:2,planned_reps:2});
+ $("#epFreq").onclick=()=>add({block_kind:"freq_amp",exercise:"Drill frequenza/ampiezza",subtype:"mixed",sets:2,planned_reps:3});
+ $("#epRun").onclick=()=>add({block_kind:"run",quality:"Accelerazione",sets:1,planned_reps:1,distance_m:30});
+ $("#epStrength").onclick=()=>add({block_kind:"strength",quality:"Forza",exercise:"Squat",sets:4,planned_reps:4,load_kg:0});
+
+ $("#editPlanSelectAll").onclick=()=>document.querySelectorAll(".editPlanAthCheck").forEach(c=>c.checked=true);
+ $("#editPlanClearAll").onclick=()=>document.querySelectorAll(".editPlanAthCheck").forEach(c=>c.checked=false);
+
+ $("#savePlannedEdit").onclick=async()=>{
+   if(!confirm("Salvare le modifiche alla seduta programmata?"))return;
+   const newBlocks=collectBlockRows("editPlannedBlocks","program");
+
+   const {error:ue}=await sb.from("planned_sessions").update({
+     session_date:$("#editPlanDate").value,
+     training_type_id:$("#editPlanType").value,
+     title:$("#editPlanTitle").value.trim(),
+     notes:$("#editPlanNotes").value
+   }).eq("id",session.id);
+   if(ue)return toast(ue.message);
+
+   const {error:de}=await sb.from("planned_blocks").delete().eq("planned_session_id",session.id);
+   if(de)return toast(de.message);
+
+   if(newBlocks.length){
+     const payload=newBlocks.map(b=>({planned_session_id:session.id,...b}));
+     const {error:ie}=await sb.from("planned_blocks").insert(payload);
+     if(ie)return toast(ie.message);
+   }
+
+   const targetAthletes=[...document.querySelectorAll(".editPlanAthCheck:checked")].map(c=>c.value);
+   if(targetAthletes.length){
+     const updatedSession={
+       ...session,
+       session_date:$("#editPlanDate").value,
+       training_type_id:$("#editPlanType").value,
+       title:$("#editPlanTitle").value.trim(),
+       notes:$("#editPlanNotes").value,
+       planned_blocks:newBlocks
+     };
+     const ok=await clonePlannedSessionToAthletes(updatedSession,targetAthletes);
+     if(!ok)return;
+   }
+
+   close();
+   toast(targetAthletes.length?`Seduta modificata e aggiunta a ${targetAthletes.length} atleta/i`:"Seduta programmata modificata");
+   if(after)await after();
+ };
+}
+
 async function renderProgram(){
  const aa=isStaff()?await getAthletes():[athleteProfile];
  const types=await getTrainingTypes();
@@ -640,7 +781,7 @@ async function renderProgram(){
          ${s.notes?`<p>${s.notes}</p>`:""}
          <div class="programActions">
            ${profile.role!=="doctor"&&!completed.has(s.id)&&s.status!=="completed"?`<button class="primary smallBtn" data-execute-program="${s.id}">Registra svolto</button>`:""}
-           ${canEditProgram()?`<button class="dangerBtn smallBtn" data-delete-program="${s.id}">🗑️ Elimina</button>`:""}
+           ${canEditProgram()?`<button class="editBtn smallBtn" data-edit-program="${s.id}">✏️ Modifica</button><button class="secondary smallBtn" data-share-program="${s.id}">👥 Aggiungi ad altri</button><button class="dangerBtn smallBtn" data-delete-program="${s.id}">🗑️ Elimina</button>`:""}
          </div>
        </div>`).join(""):'<div class="programRest">Riposo / nessuna seduta programmata</div>'}
      </div>`;
@@ -650,26 +791,59 @@ async function renderProgram(){
      const duplicateWeek=async(repeats=1)=>{
        const source=p||[];
        if(!source.length)return toast("Nessuna seduta da copiare in questa settimana.");
-       const raw=prompt(repeats===1?"Data del lunedì di destinazione (AAAA-MM-GG):":"Data del lunedì di inizio mesociclo (AAAA-MM-GG):",localISODate(addDaysDate(monday,7)));
-       if(!raw)return;
-       const targetMonday=new Date(raw+"T12:00:00");
+
+       const rawDate=prompt(repeats===1?"Data del lunedì di destinazione (AAAA-MM-GG):":"Data del lunedì di inizio mesociclo (AAAA-MM-GG):",localISODate(addDaysDate(monday,7)));
+       if(!rawDate)return;
+       const targetMonday=new Date(rawDate+"T12:00:00");
+
        const weekCount=repeats===1?1:Number(prompt("Quante settimane vuoi programmare?",4)||0);
        if(!weekCount||weekCount<1)return;
-       if(!confirm(`Copio ${source.length} sedute per ${weekCount} settimana/e. Confermi?`))return;
-       for(let w=0;w<weekCount;w++){
-         for(const s of source){
-           const srcDate=new Date(s.session_date+"T12:00:00");
-           const delta=Math.round((srcDate-monday)/86400000);
-           const newDate=localISODate(addDaysDate(targetMonday,delta+w*7));
-           const {data:newS,error:se}=await sb.from("planned_sessions").insert({
-             athlete_id:s.athlete_id,session_date:newDate,training_type_id:s.training_type_id,title:s.title,notes:s.notes,status:"planned",created_by:currentUser.id
-           }).select("id").single();
-           if(se)return toast(se.message);
-           const blocks=(s.planned_blocks||[]).map(({id,planned_session_id,planned_volume_m,created_at,...b})=>({planned_session_id:newS.id,...b}));
-           if(blocks.length){const {error:be}=await sb.from("planned_blocks").insert(blocks);if(be)return toast(be.message)}
+
+       const athleteList=aa.map((a,i)=>`${i+1}. ${a.display_name}`).join("\\n");
+       const rawAth=prompt(`Per quali atleti vuoi copiare ${repeats===1?"la settimana":"il mesociclo"}?\\nInserisci i numeri separati da virgola oppure scrivi TUTTI.\\n\\n${athleteList}`,"TUTTI");
+       if(!rawAth)return;
+
+       let targetAthletes=[];
+       if(rawAth.trim().toUpperCase()==="TUTTI"){
+         targetAthletes=aa;
+       }else{
+         const idxs=rawAth.split(",").map(x=>Number(x.trim())-1).filter(x=>Number.isInteger(x));
+         targetAthletes=idxs.map(i=>aa[i]).filter(Boolean);
+       }
+       if(!targetAthletes.length)return toast("Nessun atleta valido selezionato.");
+
+       if(!confirm(`Copio ${source.length} sedute per ${weekCount} settimana/e a ${targetAthletes.length} atleta/i. Confermi?`))return;
+
+       for(const athlete of targetAthletes){
+         for(let w=0;w<weekCount;w++){
+           for(const s of source){
+             const srcDate=new Date(s.session_date+"T12:00:00");
+             const delta=Math.round((srcDate-monday)/86400000);
+             const newDate=localISODate(addDaysDate(targetMonday,delta+w*7));
+
+             const {data:newS,error:se}=await sb.from("planned_sessions").insert({
+               athlete_id:athlete.id,
+               session_date:newDate,
+               training_type_id:s.training_type_id,
+               title:s.title,
+               notes:s.notes,
+               status:"planned",
+               created_by:currentUser.id
+             }).select("id").single();
+             if(se)return toast(se.message);
+
+             const blocks=(s.planned_blocks||[]).map(({id,planned_session_id,planned_volume_m,created_at,...b})=>({
+               planned_session_id:newS.id,...b
+             }));
+             if(blocks.length){
+               const {error:be}=await sb.from("planned_blocks").insert(blocks);
+               if(be)return toast(be.message);
+             }
+           }
          }
        }
-       toast("Programmazione copiata");await draw();
+       toast(`${repeats===1?"Settimana":"Mesociclo"} copiato per ${targetAthletes.length} atleta/i`);
+       await draw();
      };
      $("#copyWeekBtn").onclick=()=>duplicateWeek(1);
      $("#repeatWeekBtn").onclick=()=>duplicateWeek(4);
@@ -678,6 +852,23 @@ async function renderProgram(){
    document.querySelectorAll("[data-execute-program]").forEach(b=>b.onclick=()=>{
      sessionStorage.setItem("programToExecute",b.dataset.executeProgram);
      activeTab="training";renderTabs();render();
+   });
+   document.querySelectorAll("[data-edit-program]").forEach(b=>b.onclick=async()=>{
+     const s=(p||[]).find(x=>x.id===b.dataset.editProgram);
+     if(s)await editPlannedSession(s,draw);
+   });
+   document.querySelectorAll("[data-share-program]").forEach(b=>b.onclick=async()=>{
+     const s=(p||[]).find(x=>x.id===b.dataset.shareProgram);
+     if(!s)return;
+     const names=aa.filter(a=>a.id!==s.athlete_id).map((a,i)=>`${i+1}. ${a.display_name}`).join("\n");
+     const raw=prompt(`Aggiungi la seduta ad altri atleti. Inserisci i numeri separati da virgola:\n${names}\n\nEsempio: 1,3,4`);
+     if(!raw)return;
+     const idxs=raw.split(",").map(x=>Number(x.trim())-1).filter(x=>Number.isInteger(x));
+     const targets=idxs.map(i=>aa.filter(a=>a.id!==s.athlete_id)[i]).filter(Boolean);
+     if(!targets.length)return toast("Nessun atleta valido selezionato.");
+     if(!confirm(`Copiare la seduta a ${targets.length} atleta/i?`))return;
+     const ok=await clonePlannedSessionToAthletes(s,targets.map(x=>x.id));
+     if(ok){toast("Seduta aggiunta agli altri atleti");await draw()}
    });
    document.querySelectorAll("[data-delete-program]").forEach(b=>b.onclick=async()=>{
      await deletePlannedSession(b.dataset.deleteProgram,draw);

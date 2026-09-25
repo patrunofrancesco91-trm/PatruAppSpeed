@@ -226,3 +226,8 @@ body{background:radial-gradient(circle at top right,#fff0f2 0,#fff 32%,#fff8f9 1
 .athleteCheck{display:flex;align-items:center;gap:8px;border:1px solid #ececef;background:#fff;border-radius:10px;padding:10px;cursor:pointer}
 .athleteCheck input{width:auto;margin:0}.athleteCheck span{font-weight:700}
 .athleteCheck:has(input:checked){border-color:#c8102e;background:#fff0f2}
+
+/* V3.7.5 — modifica/condivisione programma */
+.plannedEditModal{width:min(1050px,96vw)}
+.plannedEditModal .workBlocks{max-height:52vh;overflow:auto;padding-right:4px}
+.programActions{align-items:center}
