@@ -214,3 +214,8 @@ body{background:radial-gradient(circle at top right,#fff0f2 0,#fff 32%,#fff8f9 1
 /* V3.7.2 — eliminazione sedute programmate */
 .programActions{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}
 .programActions .smallBtn{margin:0}
+
+/* V3.7.3 — gestione sedute reali */
+.trainingManageActions{justify-content:flex-end;flex-wrap:wrap}
+.trainingVolumeModal{width:min(980px,96vw)}
+.trainingVolumeModal .workBlocks{max-height:58vh;overflow:auto;padding-right:4px}

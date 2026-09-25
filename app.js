@@ -732,7 +732,11 @@ async function showTrainingDetailsModal(trainings,date,athleteId){
      <div class="trainingDetailText"><span>Tempi / risultati</span><p>${x.times_results||"—"}</p></div>
      <div class="trainingDetailText"><span>Dolore / problemi post</span><p>${x.pain_post||"—"}</p></div>
      <div class="trainingDetailText"><span>Note</span><p>${x.notes||"—"}</p></div>
-     ${canCoachEdit()?`<div class="modalActions"><button class="editBtn" data-detail-edit="${x.id}">✏️ Modifica seduta</button></div>`:""}
+     ${canCoachEdit()?`<div class="modalActions trainingManageActions">
+       <button class="editBtn" data-detail-edit="${x.id}">✏️ Modifica seduta</button>
+       <button class="secondary" data-detail-volume="${x.id}">📊 Modifica volume</button>
+       <button class="dangerBtn" data-detail-delete="${x.id}">🗑️ Elimina seduta</button>
+     </div>`:""}
    </div>`).join("");
 
  const el=document.createElement("div");
@@ -759,9 +763,97 @@ async function showTrainingDetailsModal(trainings,date,athleteId){
      close();
      await editTrainingRecord(id,renderTraining);
    });
+   el.querySelectorAll("[data-detail-volume]").forEach(b=>b.onclick=async()=>{
+     const id=b.dataset.detailVolume;
+     close();
+     await editTrainingVolume(id,renderTraining);
+   });
+   el.querySelectorAll("[data-detail-delete]").forEach(b=>b.onclick=async()=>{
+     const id=b.dataset.detailDelete;
+     if(!confirm("Sei sicuro di voler eliminare questa seduta?"))return;
+     const {error}=await sb.from("trainings").delete().eq("id",id);
+     if(error)return toast(error.message);
+     close();
+     toast("Seduta eliminata");
+     await renderTraining();
+   });
  }
 }
 
+
+
+async function deleteActualTraining(id,after){
+ if(!canCoachEdit())return;
+ if(!confirm("Eliminare definitivamente questa seduta di allenamento? Verranno eliminati anche i blocchi di volume collegati."))return;
+ const {error}=await sb.from("trainings").delete().eq("id",id);
+ if(error)return toast(error.message);
+ toast("Seduta eliminata");
+ if(after)await after();
+}
+
+async function editTrainingVolume(trainingId,after){
+ if(!canCoachEdit())return;
+ const {data:blocks,error}=await sb.from("training_blocks").select("*").eq("training_id",trainingId).order("created_at");
+ if(error)return toast(error.message);
+
+ const old=document.getElementById("trainingVolumeOverlay");
+ if(old)old.remove();
+
+ const el=document.createElement("div");
+ el.id="trainingVolumeOverlay";
+ el.className="modalOverlay";
+ el.innerHTML=`<div class="editModal card trainingVolumeModal">
+   <div class="sectionTitle">
+     <div><h2>Modifica volume seduta</h2><p class="muted">Correggi distanza, serie, ripetizioni effettive, esercizi e carichi.</p></div>
+     <button class="modalClose secondary">✕</button>
+   </div>
+   <div class="rowActions blockButtons">
+     <button type="button" class="secondary" id="volAddWarmup">+ Riscaldamento</button>
+     <button type="button" class="secondary" id="volAddMobility">+ Mobilità</button>
+     <button type="button" class="secondary" id="volAddTechnique">+ Tecnica</button>
+     <button type="button" class="secondary" id="volAddFreq">+ Frequenza/Ampiezza</button>
+     <button type="button" class="secondary" id="volAddRun">+ Corsa</button>
+     <button type="button" class="secondary" id="volAddStrength">+ Forza</button>
+   </div>
+   <div id="editVolumeBlocks" class="workBlocks"></div>
+   <div class="modalActions">
+     <button class="secondary modalCancel">Annulla</button>
+     <button class="primary" id="saveTrainingVolume">Salva volume corretto</button>
+   </div>
+ </div>`;
+ document.body.appendChild(el);
+
+ const close=()=>el.remove();
+ el.querySelector(".modalClose").onclick=close;
+ el.querySelector(".modalCancel").onclick=close;
+ el.onclick=e=>{if(e.target===el)close()};
+
+ const add=(data={})=>addBlockRow("editVolumeBlocks","actual",data);
+ (blocks||[]).forEach(b=>add(b));
+ if(!(blocks||[]).length) add({block_kind:"run",quality:"Accelerazione",sets:1,planned_reps:1,completed_reps:1});
+
+ $("#volAddWarmup").onclick=()=>add({block_kind:"warmup",exercise:"Corsa blanda + attivazione",duration_min:10,sets:1,planned_reps:1,completed_reps:1});
+ $("#volAddMobility").onclick=()=>add({block_kind:"mobility",exercise:"Mobilità dinamica",duration_min:8,sets:1,planned_reps:1,completed_reps:1});
+ $("#volAddTechnique").onclick=()=>add({block_kind:"technique",exercise:"Skip / dribble / gambe tese",sets:2,planned_reps:2,completed_reps:2});
+ $("#volAddFreq").onclick=()=>add({block_kind:"freq_amp",exercise:"Drill frequenza/ampiezza",subtype:"mixed",sets:2,planned_reps:3,completed_reps:3});
+ $("#volAddRun").onclick=()=>add({block_kind:"run",quality:"Accelerazione",sets:1,planned_reps:1,completed_reps:1});
+ $("#volAddStrength").onclick=()=>add({block_kind:"strength",quality:"Forza",exercise:"Squat",sets:4,planned_reps:4,completed_reps:4,load_kg:0});
+
+ $("#saveTrainingVolume").onclick=async()=>{
+   const newBlocks=collectBlockRows("editVolumeBlocks","actual");
+   if(!confirm("Salvare il volume corretto della seduta?"))return;
+   const {error:de}=await sb.from("training_blocks").delete().eq("training_id",trainingId);
+   if(de)return toast(de.message);
+   if(newBlocks.length){
+     const payload=newBlocks.map(b=>({training_id:trainingId,...b}));
+     const {error:ie}=await sb.from("training_blocks").insert(payload);
+     if(ie)return toast(ie.message);
+   }
+   close();
+   toast("Volume seduta aggiornato");
+   if(after)await after();
+ };
+}
 
 async function deletePlannedSession(id,after){
  if(!["coach","assistant_coach"].includes(profile?.role))return;
@@ -983,8 +1075,12 @@ async function renderRecentTraining(){
  let q=sb.from("trainings").select("*,athletes(display_name),training_types(name)").order("training_date",{ascending:false}).limit(10);
  if(profile.role==="athlete") q=q.eq("athlete_id",athleteProfile.id);
  const {data}=await q;
- $("#trainRecent").innerHTML=recentCard("Ultimi allenamenti",(data||[]).map(x=>[fmtDate(effectiveTrainingDate(x)),x.athletes?.display_name||"",x.training_types?.name||"",`${x.duration_min} min · RPE ${x.srpe} · ${x.session_load} AU`,canCoachEdit()?`<div class="rowActions"><button class="editBtn" data-edit-training="${x.id}">✏️ Modifica</button><button class="dangerBtn" data-del-training="${x.id}">Elimina</button></div>`:""]));
- if(canCoachEdit()){document.querySelectorAll("[data-edit-training]").forEach(b=>b.onclick=()=>editTrainingRecord(b.dataset.editTraining,renderRecentTraining));document.querySelectorAll("[data-del-training]").forEach(b=>b.onclick=()=>deleteCoachRecord("trainings",b.dataset.delTraining,renderRecentTraining,"allenamento"));}
+ $("#trainRecent").innerHTML=recentCard("Ultimi allenamenti",(data||[]).map(x=>[fmtDate(effectiveTrainingDate(x)),x.athletes?.display_name||"",x.training_types?.name||"",`${x.duration_min} min · RPE ${x.srpe} · ${x.session_load} AU`,canCoachEdit()?`<div class="rowActions"><button class="editBtn" data-edit-training="${x.id}">✏️ Modifica</button><button class="secondary" data-volume-training="${x.id}">📊 Volume</button><button class="dangerBtn" data-del-training="${x.id}">Elimina</button></div>`:""]));
+ if(canCoachEdit()){
+   document.querySelectorAll("[data-edit-training]").forEach(b=>b.onclick=()=>editTrainingRecord(b.dataset.editTraining,renderRecentTraining));
+   document.querySelectorAll("[data-volume-training]").forEach(b=>b.onclick=()=>editTrainingVolume(b.dataset.volumeTraining,renderRecentTraining));
+   document.querySelectorAll("[data-del-training]").forEach(b=>b.onclick=()=>deleteCoachRecord("trainings",b.dataset.delTraining,renderRecentTraining,"allenamento"));
+ }
 }
 
 async function getTests(){
@@ -1407,6 +1503,7 @@ async function renderHistory(){
    bindHistoryDynamicControls(filtered);
    if(canCoachEdit()){
      document.querySelectorAll("[data-hist-edit-training]").forEach(b=>b.onclick=()=>editTrainingRecord(b.dataset.histEditTraining,async()=>{cache=null;await draw()}));
+     document.querySelectorAll("[data-hist-volume-training]").forEach(b=>b.onclick=()=>editTrainingVolume(b.dataset.histVolumeTraining,async()=>{cache=null;await draw()}));
      document.querySelectorAll("[data-hist-del-training]").forEach(b=>b.onclick=()=>deleteCoachRecord("trainings",b.dataset.histDelTraining,async()=>{cache=null;await draw()},"allenamento"));
      document.querySelectorAll("[data-hist-edit-well]").forEach(b=>b.onclick=()=>editWellnessRecord(b.dataset.histEditWell,async()=>{cache=null;await draw()}));
      document.querySelectorAll("[data-hist-del-well]").forEach(b=>b.onclick=()=>deleteCoachRecord("wellness",b.dataset.histDelWell,async()=>{cache=null;await draw()},"wellness"));
@@ -1480,7 +1577,7 @@ function historyTraining(current,all,days){
  ${(()=>{const ref=trainingLoadReferenceBand(all);return referenceBandLineChart(ref.weeks.slice(-12),"Training Load settimanale · fascia personale","AU",ref.band)})()}
  ${simpleBarChart(points,"Training Load giorno per giorno","AU")}
  <div class="tableWrap historyGrid"><table><thead><tr><th>Data</th><th>Tipo</th><th>Lavoro svolto</th><th>Tempi</th><th>Durata</th><th>sRPE</th><th>TL</th><th>Dolore</th>${canCoachEdit()?"<th>Azioni</th>":""}</tr></thead><tbody>
- ${current.slice().reverse().map(x=>`<tr><td>${fmtDate(effectiveTrainingDate(x))}</td><td><b>${x.training_types?.name||""}</b></td><td>${x.work_done||"—"}</td><td>${x.times_results||"—"}</td><td>${x.duration_min} min</td><td>${x.srpe}</td><td><b>${x.session_load} AU</b></td><td>${x.pain_post||"—"}</td>${canCoachEdit()?`<td><div class="rowActions"><button class="editBtn" data-hist-edit-training="${x.id}">✏️</button><button class="dangerBtn" data-hist-del-training="${x.id}">🗑️</button></div></td>`:""}</tr>`).join("")||'<tr><td colspan="9">Nessun allenamento nel periodo</td></tr>'}
+ ${current.slice().reverse().map(x=>`<tr><td>${fmtDate(effectiveTrainingDate(x))}</td><td><b>${x.training_types?.name||""}</b></td><td>${x.work_done||"—"}</td><td>${x.times_results||"—"}</td><td>${x.duration_min} min</td><td>${x.srpe}</td><td><b>${x.session_load} AU</b></td><td>${x.pain_post||"—"}</td>${canCoachEdit()?`<td><div class="rowActions"><button class="editBtn" data-hist-edit-training="${x.id}">✏️</button><button class="secondary" data-hist-volume-training="${x.id}">📊</button><button class="dangerBtn" data-hist-del-training="${x.id}">🗑️</button></div></td>`:""}</tr>`).join("")||'<tr><td colspan="9">Nessun allenamento nel periodo</td></tr>'}
  </tbody></table></div>`;
 }
 function historyTests(current,all){
