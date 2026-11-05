@@ -8,11 +8,11 @@ const $=s=>document.querySelector(s);
 const authView=$("#authView"), appView=$("#appView"), view=$("#view"), tabs=$("#tabs"), headerUser=$("#headerUser");
 let currentUser=null, profile=null, athleteProfile=null, activeTab="home";
 
-const athleteTabs=["home","attendance","program","wellness","training","tests","races","performance","compare","injuries","history","report"];
+const athleteTabs=["home","attendance","program","wellness","training","tests","races","performance","compare","injuries","history","report","notifications"];
 const doctorTabs=["home","attendance","program","performance","compare","history","injuries","report"];
-const coachTabs=["home","attendance","program","athletes","wellness","training","tests","races","performance","compare","injuries","history","report","settings"];
-const assistantTabs=["home","attendance","program","wellness","training","tests","races","performance","compare","injuries","history","report"];
-const labels={home:"Dashboard",attendance:"Presenze",program:"Programma",athletes:"Atleti",wellness:"Wellness",training:"Allenamento",tests:"Test",races:"Gare",performance:"Performance",compare:"Confronti",injuries:"Infortuni",history:"Storico",report:"Report",settings:"Impostazioni"};
+const coachTabs=["home","attendance","program","athletes","wellness","training","tests","races","performance","compare","injuries","history","report","notifications","settings"];
+const assistantTabs=["home","attendance","program","wellness","training","tests","races","performance","compare","injuries","history","report","notifications"];
+const labels={home:"Dashboard",attendance:"Presenze",program:"Programma",athletes:"Atleti",wellness:"Wellness",training:"Allenamento",tests:"Test",races:"Gare",performance:"Performance",compare:"Confronti",injuries:"Infortuni",history:"Storico",report:"Report",notifications:"Notifiche",settings:"Impostazioni"};
 
 const DEFAULT_TRAINING_TYPES=["Accelerazioni","Tempo Run","Forza","Lanciati","V Max","Capacità lattacida","Potenza lattacida","Speed Endurance","Special Speed Endurance","Ostacoli / Tecnica ostacoli","Tecnica di corsa","Pliometria","Recupero / Rigenerazione","Gara","Altro"];
 const DEFAULT_TESTS=[
@@ -67,7 +67,7 @@ function renderTabs(){
  tabs.querySelectorAll("button").forEach(b=>b.onclick=async()=>{activeTab=b.dataset.tab;renderTabs();await render()});
 }
 async function render(){
- const fn={home:renderHome,attendance:renderAttendance,program:renderProgram,athletes:renderAthletes,wellness:renderWellness,training:renderTraining,tests:renderTests,races:renderRaces,performance:renderPerformance,compare:renderCompare,injuries:renderInjuries,history:renderHistory,report:renderReport,settings:renderSettings}[activeTab];
+ const fn={home:renderHome,attendance:renderAttendance,program:renderProgram,athletes:renderAthletes,wellness:renderWellness,training:renderTraining,tests:renderTests,races:renderRaces,performance:renderPerformance,compare:renderCompare,injuries:renderInjuries,history:renderHistory,report:renderReport,notifications:renderNotifications,settings:renderSettings}[activeTab];
  await fn();
 }
 const stat=(l,v)=>`<div class="stat"><span>${l}</span><b>${v}</b></div>`;
@@ -244,7 +244,7 @@ async function renderHome(){
    <div class="card"><h2>Carico totale registrato</h2><div class="kpi">${(t||[]).reduce((s,x)=>s+Number(x.session_load||0),0)} AU</div></div>`;
    document.querySelectorAll("[data-hist]").forEach(b=>b.onclick=async()=>{sessionStorage.setItem("historyAthlete",b.dataset.hist);activeTab="history";renderTabs();await render()});
    document.querySelectorAll("[data-go-compare]").forEach(b=>b.onclick=async()=>{sessionStorage.setItem("compareSection",b.dataset.goCompare);activeTab="compare";renderTabs();await render()});
-   if($("#enableNotifyHome")) $("#enableNotifyHome").onclick=enableNotifications;
+   if($("#enableNotifyHome")) $("#enableNotifyHome").onclick=async()=>{activeTab="notifications";renderTabs();await render()};
    await maybeNotifyCoach(alertRows);
  }
 }
@@ -316,20 +316,181 @@ function coachAlertCard(a,alerts){
  const icon=alerts.status==="red"?"🔴":alerts.status==="orange"?"🟠":"🟢";
  return `<div class="alertAthlete ${alerts.status}"><div class="sectionTitle"><h3>${icon} ${a.display_name}</h3><button class="secondary" data-hist="${a.id}">Storico</button></div><ul>${alerts.items.slice(0,4).map(x=>`<li>${x.text}</li>`).join("")}</ul></div>`;
 }
+
+function urlBase64ToUint8Array(base64String){
+ const padding="=".repeat((4-base64String.length%4)%4);
+ const base64=(base64String+padding).replace(/-/g,"+").replace(/_/g,"/");
+ const raw=atob(base64);
+ return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)));
+}
+async function getBrowserPushSubscription(){
+ if(!("serviceWorker" in navigator) || !("PushManager" in window))return null;
+ const reg=await navigator.serviceWorker.ready;
+ return await reg.pushManager.getSubscription();
+}
 async function enableNotifications(){
- if(!("Notification" in window)){toast("Notifiche non supportate da questo browser.");return}
+ if(!("Notification" in window)||!("serviceWorker" in navigator)||!("PushManager" in window)){
+   toast("Push non supportate da questo browser/dispositivo.");return false;
+ }
+ if(!cfg.PUSH_VAPID_PUBLIC_KEY){
+   toast("Chiave push pubblica non configurata.");return false;
+ }
  const permission=await Notification.requestPermission();
  localStorage.setItem("pamNotifications",permission);
- toast(permission==="granted"?"Notifiche attivate":"Notifiche non autorizzate");
+ if(permission!=="granted"){toast("Notifiche non autorizzate");return false}
+ try{
+   const reg=await navigator.serviceWorker.ready;
+   let sub=await reg.pushManager.getSubscription();
+   if(!sub){
+     sub=await reg.pushManager.subscribe({
+       userVisibleOnly:true,
+       applicationServerKey:urlBase64ToUint8Array(cfg.PUSH_VAPID_PUBLIC_KEY)
+     });
+   }
+   const j=sub.toJSON();
+   const {error}=await sb.from("push_subscriptions").upsert({
+     user_id:currentUser.id,
+     endpoint:j.endpoint,
+     p256dh:j.keys?.p256dh||"",
+     auth:j.keys?.auth||"",
+     user_agent:navigator.userAgent,
+     active:true,
+     updated_at:new Date().toISOString()
+   },{onConflict:"user_id,endpoint"});
+   if(error)throw error;
+   toast("🔔 Push attivate su questo dispositivo");
+   return true;
+ }catch(e){
+   console.error(e);
+   toast("Errore attivazione push: "+(e.message||e));
+   return false;
+ }
+}
+async function disableNotifications(){
+ try{
+   const sub=await getBrowserPushSubscription();
+   if(sub){
+     const endpoint=sub.endpoint;
+     await sub.unsubscribe();
+     await sb.from("push_subscriptions").update({active:false,updated_at:new Date().toISOString()}).eq("user_id",currentUser.id).eq("endpoint",endpoint);
+   }
+   toast("Push disattivate su questo dispositivo");
+   return true;
+ }catch(e){toast(e.message||String(e));return false}
 }
 async function showLocalNotification(title,body,tag){
  if(Notification.permission!=="granted")return;
  try{
    const reg=await navigator.serviceWorker.ready;
-   await reg.showNotification(title,{body,tag,icon:"",badge:""});
+   await reg.showNotification(title,{body,tag,icon:"assets/icon-192.png",badge:"assets/icon-192.png",data:{url:"./"}});
  }catch(e){
    try{new Notification(title,{body,tag})}catch(_){}
  }
+}
+async function notifyAthletesOfProgram(athleteIds,date,title,action="updated"){
+ if(!canCoachEdit()||!athleteIds?.length)return;
+ try{
+   await sb.functions.invoke("push-notify",{body:{
+     athlete_ids:[...new Set(athleteIds)],
+     title:action==="created"?"📋 Nuovo allenamento programmato":"✏️ Programma aggiornato",
+     body:`${fmtDate(date)} · ${title||"Seduta di allenamento"}`,
+     kind:"program",
+     url:"./"
+   }});
+ }catch(e){console.warn("Push programma non disponibile",e)}
+}
+async function renderNotifications(){
+ const canPush=("Notification" in window)&&("serviceWorker" in navigator)&&("PushManager" in window);
+ let sub=null; try{sub=canPush?await getBrowserPushSubscription():null}catch(_){}
+ let {data:pref,error:prefErr}=await sb.from("notification_preferences").select("*").eq("user_id",currentUser.id).maybeSingle();
+ if(prefErr && !String(prefErr.message||"").includes("0 rows")){
+   view.innerHTML=`<div class="card"><h2>🔔 Notifiche</h2><div class="note">${prefErr.message}<br><b>Esegui prima V3_9_UPGRADE.sql su Supabase.</b></div></div>`;return;
+ }
+ if(!pref){
+   const defaults={user_id:currentUser.id,attendance_enabled:true,wellness_enabled:true,training_enabled:true,program_enabled:true,attendance_time:"12:00",wellness_time:"16:30",training_time:"21:00",timezone:"Europe/Rome"};
+   const {data:newPref}=await sb.from("notification_preferences").upsert(defaults,{onConflict:"user_id"}).select("*").single();
+   pref=newPref||defaults;
+ }
+ const {data:notes}=await sb.from("notifications").select("*").eq("user_id",currentUser.id).order("created_at",{ascending:false}).limit(30);
+ const unread=(notes||[]).filter(n=>!n.read_at).length;
+
+ let staffPanel="";
+ if(canCoachEdit()){
+   const aa=await getAthletes();
+   const userIds=aa.map(a=>a.user_id).filter(Boolean);
+   let subs=[];
+   if(userIds.length){
+     const {data}=await sb.from("push_subscriptions").select("user_id,active,updated_at").in("user_id",userIds).eq("active",true);
+     subs=data||[];
+   }
+   const activeUsers=new Set(subs.map(x=>x.user_id));
+   staffPanel=`<div class="card">
+     <div class="sectionTitle"><div><h2>Stato dispositivi atleti</h2><p class="muted">Push attive = almeno un dispositivo registrato.</p></div></div>
+     <div class="tableWrap"><table><thead><tr><th>Atleta</th><th>Push</th><th>Test</th></tr></thead><tbody>
+       ${aa.map(a=>`<tr><td><b>${a.display_name}</b></td><td>${a.user_id&&activeUsers.has(a.user_id)?"🟢 Attive":"⚪ Non attive"}</td><td>${a.user_id?`<button class="secondary smallBtn" data-test-push="${a.id}">Invia test</button>`:"—"}</td></tr>`).join("")}
+     </tbody></table></div>
+   </div>`;
+ }
+
+ view.innerHTML=`<div class="notificationHero card">
+   <div><span class="eyebrow">PATRUNO SPEED TEAM</span><h2>🔔 Notifiche & Reminder</h2><p>Presenze, Wellness, allenamento e aggiornamenti del programma.</p></div>
+   <div class="notificationStatus ${sub?"on":"off"}"><b>${sub?"PUSH ATTIVE":"PUSH NON ATTIVE"}</b><small>${Notification?.permission||"non supportate"}</small></div>
+ </div>
+ <div class="grid two">
+   <div class="card">
+     <div class="sectionTitle"><div><h2>Questo dispositivo</h2><p class="muted">${canPush?"Registra il browser per ricevere notifiche anche ad app chiusa.":"Push non supportate su questo browser."}</p></div></div>
+     <div class="rowActions"><button class="primary" id="pushEnable">🔔 Attiva push</button><button class="secondary" id="pushDisable">Disattiva</button></div>
+     <p class="note">Su iPhone/iPad la PWA deve essere aggiunta alla schermata Home prima di autorizzare i push.</p>
+   </div>
+   <div class="card">
+     <h2>Preferenze reminder</h2>
+     <form id="notifPrefForm">
+       <div class="reminderRow"><label><input type="checkbox" id="npAttendance" ${pref.attendance_enabled?"checked":""}> 📅 Presenza</label><input type="time" id="npAttendanceTime" value="${String(pref.attendance_time||"12:00").slice(0,5)}"></div>
+       <div class="reminderRow"><label><input type="checkbox" id="npWellness" ${pref.wellness_enabled?"checked":""}> ❤️ Wellness</label><input type="time" id="npWellnessTime" value="${String(pref.wellness_time||"16:30").slice(0,5)}"></div>
+       <div class="reminderRow"><label><input type="checkbox" id="npTraining" ${pref.training_enabled?"checked":""}> 📊 Allenamento / sRPE</label><input type="time" id="npTrainingTime" value="${String(pref.training_time||"21:00").slice(0,5)}"></div>
+       <div class="reminderRow"><label><input type="checkbox" id="npProgram" ${pref.program_enabled?"checked":""}> 📋 Modifiche programma</label><span class="muted">immediate</span></div>
+       <button class="primary">Salva preferenze</button>
+     </form>
+   </div>
+ </div>
+ ${staffPanel}
+ <div class="card">
+   <div class="sectionTitle"><div><h2>Centro notifiche</h2><p class="muted">${unread} non lette</p></div>${unread?`<button class="secondary" id="markAllRead">Segna tutte lette</button>`:""}</div>
+   <div class="notificationList">${(notes||[]).map(n=>`<div class="notificationItem ${n.read_at?"":"unread"}">
+     <div class="notificationIcon">${n.kind==="attendance"?"📅":n.kind==="wellness"?"❤️":n.kind==="training"?"📊":n.kind==="program"?"📋":"🔔"}</div>
+     <div><b>${n.title}</b><p>${n.body||""}</p><small>${fmt(n.created_at)}</small></div>
+   </div>`).join("")||'<p class="muted">Nessuna notifica.</p>'}</div>
+ </div>`;
+
+ $("#pushEnable").onclick=async()=>{if(await enableNotifications())await renderNotifications()};
+ $("#pushDisable").onclick=async()=>{if(await disableNotifications())await renderNotifications()};
+ $("#notifPrefForm").onsubmit=async e=>{
+   e.preventDefault();
+   const payload={
+     user_id:currentUser.id,
+     attendance_enabled:$("#npAttendance").checked,
+     wellness_enabled:$("#npWellness").checked,
+     training_enabled:$("#npTraining").checked,
+     program_enabled:$("#npProgram").checked,
+     attendance_time:$("#npAttendanceTime").value,
+     wellness_time:$("#npWellnessTime").value,
+     training_time:$("#npTrainingTime").value,
+     timezone:"Europe/Rome",
+     updated_at:new Date().toISOString()
+   };
+   const {error}=await sb.from("notification_preferences").upsert(payload,{onConflict:"user_id"});
+   if(error)return toast(error.message);
+   toast("Preferenze notifiche salvate");
+ };
+ if($("#markAllRead"))$("#markAllRead").onclick=async()=>{
+   const {error}=await sb.from("notifications").update({read_at:new Date().toISOString()}).eq("user_id",currentUser.id).is("read_at",null);
+   if(error)return toast(error.message);await renderNotifications();
+ };
+ document.querySelectorAll("[data-test-push]").forEach(b=>b.onclick=async()=>{
+   const athleteId=b.dataset.testPush;
+   const {error}=await sb.functions.invoke("push-notify",{body:{athlete_ids:[athleteId],title:"🔔 Test Patruno Speed Team",body:"Notifiche push configurate correttamente.",kind:"test",url:"./"}});
+   toast(error?"Test non inviato: "+error.message:"Notifica test inviata");
+ });
 }
 async function maybeNotifyCoach(rows){
  if(localStorage.getItem("pamNotifications")!=="granted" || Notification.permission!=="granted")return;
@@ -466,14 +627,25 @@ async function getTrainingTypes(){
 }
 
 
+function repsArrayFromData(data,prefix){
+ const raw=prefix==="actual"?(data.completed_reps_per_set??data.reps_per_set):(data.reps_per_set);
+ if(Array.isArray(raw))return raw.map(Number).filter(x=>Number.isFinite(x)&&x>=0);
+ if(typeof raw==="string"){
+   try{const x=JSON.parse(raw);if(Array.isArray(x))return x.map(Number).filter(n=>Number.isFinite(n)&&n>=0)}catch(e){}
+ }
+ return [];
+}
+function repsArrayFromInput(value){
+ return String(value||"").split(/[,;\s]+/).map(x=>Number(x)).filter(x=>Number.isFinite(x)&&x>=0);
+}
 function blockEditorRow(prefix,index,data={}){
  const kind=data.block_kind||((data.quality==="Forza")?"strength":"run");
  const q=data.quality||"Accelerazione";
- const isStrength=kind==="strength";
- const isRun=kind==="run";
- const isGeneral=["warmup","mobility","technique","freq_amp"].includes(kind);
  const labelMap={run:"Corsa / specifico",strength:"Forza",warmup:"Riscaldamento",mobility:"Mobilità",technique:"Tecnica di corsa",freq_amp:"Frequenza / ampiezza"};
+ const perSet=repsArrayFromData(data,prefix);
  return `<div class="workBlockRow ${kind}Block" data-block-row="${prefix}_${index}">
+   <div class="blockOrderTools" title="Ordine del mezzo"><span class="dragHandle">☰</span><button type="button" class="blockMoveBtn moveUp" title="Sposta su">↑</button><button type="button" class="blockMoveBtn moveDown" title="Sposta giù">↓</button><button type="button" class="blockMoveBtn duplicateBlock" title="Duplica blocco">⧉</button></div>
+   <div class="blockOrdinal"></div>
    <label>Tipo<select class="${prefix}Kind blockKind">
      ${Object.entries(labelMap).map(([v,l])=>`<option value="${v}" ${kind===v?"selected":""}>${l}</option>`).join("")}
    </select></label>
@@ -489,11 +661,16 @@ function blockEditorRow(prefix,index,data={}){
 
    <label>Serie<input class="${prefix}Sets" type="number" min="1" step="1" value="${data.sets??1}"></label>
 
-   <label>${prefix==="actual"?"Rip. previste":"Ripetute"}
+   <label>${prefix==="actual"?"Rip. previste/serie":"Ripetute/serie"}
      <input class="${prefix}PlannedReps" type="number" min="0" step="1" value="${data.planned_reps??data.reps??1}">
    </label>
 
-   ${prefix==="actual"?`<label>Rip. effettive<input class="${prefix}CompletedReps" type="number" min="0" step="1" value="${data.completed_reps??data.planned_reps??1}"></label>`:""}
+   ${prefix==="actual"?`<label>Rip. effettive standard<input class="${prefix}CompletedReps" type="number" min="0" step="1" value="${data.completed_reps??data.planned_reps??1}"></label>`:""}
+
+   <label class="runOnly perSetField">${prefix==="actual"?"Effettive per serie":"Ripetute per serie"}
+     <input class="${prefix}RepsPerSet" value="${perSet.join(', ')}" placeholder="es. 4, 4, 3">
+     <small>${prefix==="actual"?"Se diverso tra le serie: es. 4,4,3":"Opzionale: es. 4,4,3"}</small>
+   </label>
 
    <label class="strengthOnly">Carico (kg)<input class="${prefix}LoadKg" type="number" min="0" step="0.5" value="${data.load_kg??""}" placeholder="kg"></label>
 
@@ -507,36 +684,70 @@ function blockEditorRow(prefix,index,data={}){
 
    <label class="runOnly">Recupero<input class="${prefix}Recovery" value="${data.recovery_text??""}" placeholder="es. 3′ / 6′"></label>
    <label class="blockNotes">Note<input class="${prefix}BlockNotes" value="${data.notes??""}"></label>
-   <button type="button" class="dangerBtn removeBlock">✕</button>
+   <div class="blockLiveSummary"></div>
+   <button type="button" class="dangerBtn removeBlock" title="Elimina blocco">✕</button>
  </div>`;
+}
+function refreshBlockOrder(containerId){
+ const c=document.getElementById(containerId);if(!c)return;
+ [...c.querySelectorAll('.workBlockRow')].forEach((r,i)=>{
+   const n=r.querySelector('.blockOrdinal');if(n)n.textContent=`${i+1}`;
+   r.dataset.sortOrder=i+1;
+ });
+}
+function updateBlockLiveSummary(row,prefix){
+ const kind=row.querySelector(`.${prefix}Kind`)?.value||'run';
+ const sets=Number(row.querySelector(`.${prefix}Sets`)?.value||1);
+ const dist=Number(row.querySelector(`.${prefix}Distance`)?.value||0);
+ const load=Number(row.querySelector(`.${prefix}LoadKg`)?.value||0);
+ const planned=Number(row.querySelector(`.${prefix}PlannedReps`)?.value||0);
+ const completed=prefix==='actual'?Number(row.querySelector(`.${prefix}CompletedReps`)?.value||0):planned;
+ const arr=repsArrayFromInput(row.querySelector(`.${prefix}RepsPerSet`)?.value||'');
+ const reps=arr.length?arr.reduce((a,b)=>a+b,0):sets*(prefix==='actual'?completed:planned);
+ const summary=row.querySelector('.blockLiveSummary');if(!summary)return;
+ if(kind==='run'&&dist>0)summary.innerHTML=`<b>${Math.round(dist*reps)} m</b><small>${arr.length?` · serie: ${arr.join(' / ')}`:''}</small>`;
+ else if(kind==='strength'&&load>0)summary.innerHTML=`<b>${Math.round(load*sets*(prefix==='actual'?completed:planned))} kg volume-load</b>`;
+ else summary.innerHTML='';
 }
 function addBlockRow(containerId,prefix,data={}){
  const c=document.getElementById(containerId); if(!c)return;
  const idx=Date.now()+Math.floor(Math.random()*1000);
  c.insertAdjacentHTML("beforeend",blockEditorRow(prefix,idx,data));
  const row=c.lastElementChild;
- row.querySelector(".removeBlock").onclick=()=>row.remove();
- const kindSel=row.querySelector(`.${prefix}Kind`);
  const refresh=()=>{
-   const kind=kindSel.value;
+   const kind=row.querySelector(`.${prefix}Kind`).value;
    row.className=`workBlockRow ${kind}Block`;
    row.querySelectorAll(".runOnly,.strengthOnly,.generalOnly,.freqOnly").forEach(x=>x.style.display="none");
    if(kind==="run") row.querySelectorAll(".runOnly").forEach(x=>x.style.display="");
    if(kind==="strength") row.querySelectorAll(".strengthOnly").forEach(x=>x.style.display="");
    if(["warmup","mobility","technique","freq_amp"].includes(kind)) row.querySelectorAll(".generalOnly").forEach(x=>x.style.display="");
    if(kind==="freq_amp") row.querySelectorAll(".freqOnly").forEach(x=>x.style.display="");
+   updateBlockLiveSummary(row,prefix);
  };
- kindSel.onchange=refresh;
- refresh();
+ row.querySelector('.removeBlock').onclick=()=>{row.remove();refreshBlockOrder(containerId)};
+ row.querySelector('.moveUp').onclick=()=>{const p=row.previousElementSibling;if(p)c.insertBefore(row,p);refreshBlockOrder(containerId)};
+ row.querySelector('.moveDown').onclick=()=>{const n=row.nextElementSibling;if(n)c.insertBefore(n,row);refreshBlockOrder(containerId)};
+ row.querySelector('.duplicateBlock').onclick=()=>{
+   const current=collectBlockRows(containerId,prefix);
+   const pos=[...c.querySelectorAll('.workBlockRow')].indexOf(row);
+   const clone=current[pos]||{};
+   addBlockRow(containerId,prefix,clone);
+   const added=c.lastElementChild;row.after(added);refreshBlockOrder(containerId);
+ };
+ row.querySelector(`.${prefix}Kind`).onchange=refresh;
+ row.querySelectorAll('input,select').forEach(x=>x.addEventListener('input',()=>updateBlockLiveSummary(row,prefix)));
+ refresh();refreshBlockOrder(containerId);
 }
 function collectBlockRows(containerId,prefix){
  const c=document.getElementById(containerId); if(!c)return [];
- return [...c.querySelectorAll(".workBlockRow")].map(r=>{
+ return [...c.querySelectorAll(".workBlockRow")].map((r,index)=>{
    const kind=r.querySelector(`.${prefix}Kind`)?.value||"run";
    const generalExercise=r.querySelector(`.${prefix}Exercise`)?.value||"";
    const strengthExercise=r.querySelector(`.${prefix}ExerciseStrength`)?.value||"";
+   const repsPerSet=repsArrayFromInput(r.querySelector(`.${prefix}RepsPerSet`)?.value||"");
    const o={
      block_kind:kind,
+     sort_order:index+1,
      quality:kind==="strength"?"Forza":kind==="run"?(r.querySelector(`.${prefix}Quality`)?.value||"Altro"):
        ({warmup:"Riscaldamento",mobility:"Mobilità",technique:"Tecnica di corsa",freq_amp:"Frequenza / ampiezza"}[kind]||"Altro"),
      distance_m:kind==="run"?Number(r.querySelector(`.${prefix}Distance`)?.value||0):0,
@@ -546,10 +757,15 @@ function collectBlockRows(containerId,prefix){
      subtype:kind==="freq_amp"?(r.querySelector(`.${prefix}Subtype`)?.value||"mixed"):null,
      sets:Number(r.querySelector(`.${prefix}Sets`)?.value||1),
      planned_reps:Number(r.querySelector(`.${prefix}PlannedReps`)?.value||0),
+     reps_per_set:kind==="run"&&repsPerSet.length?repsPerSet:null,
      recovery_text:kind==="run"?(r.querySelector(`.${prefix}Recovery`)?.value||""):"",
      notes:r.querySelector(`.${prefix}BlockNotes`)?.value||""
    };
-   if(prefix==="actual")o.completed_reps=Number(r.querySelector(`.${prefix}CompletedReps`)?.value||0);
+   if(prefix==="actual"){
+     o.completed_reps=Number(r.querySelector(`.${prefix}CompletedReps`)?.value||0);
+     o.completed_reps_per_set=kind==="run"&&repsPerSet.length?repsPerSet:null;
+     delete o.reps_per_set;
+   }
    return o;
  }).filter(x=>{
    if(x.block_kind==="run") return x.distance_m>0;
@@ -558,13 +774,18 @@ function collectBlockRows(containerId,prefix){
  });
 }
 function volumeForBlock(b,actual=true){
- const reps=actual?(Number(b.completed_reps??b.planned_reps??0)):Number(b.planned_reps??0);
- if((b.block_kind||"run")==="strength") return Number(b.load_kg||0)*Number(b.sets||1)*reps;
- return Number(b.distance_m||0)*Number(b.sets||1)*reps;
+ const kind=b.block_kind||"run";
+ if(kind==="strength"){
+   const reps=actual?Number(b.completed_reps??b.planned_reps??0):Number(b.planned_reps??0);
+   return Number(b.load_kg||0)*Number(b.sets||1)*reps;
+ }
+ const arr=actual?(b.completed_reps_per_set||null):(b.reps_per_set||null);
+ const totalReps=Array.isArray(arr)&&arr.length?arr.map(Number).reduce((a,x)=>a+(Number.isFinite(x)?x:0),0):Number(b.sets||1)*Number(actual?(b.completed_reps??b.planned_reps??0):(b.planned_reps??0));
+ return Number(b.distance_m||0)*totalReps;
 }
 function blocksSummaryHTML(blocks,actual=true){
  if(!blocks?.length)return '<span class="muted">Nessun blocco specifico</span>';
- return blocks.map(b=>{
+ return [...blocks].sort((a,b)=>(a.sort_order||999)-(b.sort_order||999)).map(b=>{
    const reps=actual?(b.completed_reps??b.planned_reps):b.planned_reps;
    const kind=b.block_kind||"run";
    if(kind==="strength")
@@ -665,7 +886,7 @@ async function editPlannedSession(session,after){
  el.onclick=e=>{if(e.target===el)close()};
 
  const add=(d={})=>addBlockRow("editPlannedBlocks","program",d);
- (session.planned_blocks||[]).forEach(b=>add(b));
+ [...(session.planned_blocks||[])].sort((a,b)=>(a.sort_order||999)-(b.sort_order||999)).forEach(b=>add(b));
 
  $("#epWarmup").onclick=()=>add({block_kind:"warmup",exercise:"Corsa blanda + attivazione",duration_min:10,sets:1,planned_reps:1});
  $("#epMobility").onclick=()=>add({block_kind:"mobility",exercise:"Mobilità dinamica",duration_min:8,sets:1,planned_reps:1});
@@ -712,6 +933,7 @@ async function editPlannedSession(session,after){
      if(!ok)return;
    }
 
+   await notifyAthletesOfProgram([session.athlete_id,...targetAthletes],$("#editPlanDate").value,$("#editPlanTitle").value.trim()||"Seduta","updated");
    close();
    toast(targetAthletes.length?`Seduta modificata e aggiunta a ${targetAthletes.length} atleta/i`:"Seduta programmata modificata");
    if(after)await after();
@@ -725,7 +947,7 @@ async function renderProgram(){
  const canEditProgram=()=>["coach","assistant_coach"].includes(profile?.role);
 
  view.innerHTML=`<div class="card">
-   <div class="sectionTitle"><div><h2>Programma allenamento</h2><p class="muted">Pianifica il microciclo e confronta automaticamente programmato e svolto.</p></div><span class="badge redBadge">V3.6</span></div>
+   <div class="sectionTitle"><div><h2>Programma allenamento</h2><p class="muted">Pianifica il microciclo e confronta automaticamente programmato e svolto.</p></div><span class="badge redBadge">PROGRAMMA PRO</span></div>
    <div class="grid two">
      ${isStaff()?`<label>Atleta<select id="programAth">${aa.map(a=>`<option value="${a.id}">${a.display_name}</option>`).join("")}</select></label>`:""}
      <div class="weekNav"><button class="secondary" id="programPrev">←</button><button class="secondary" id="programThis">Settimana attuale</button><button class="secondary" id="programNext">→</button></div>
@@ -751,7 +973,7 @@ async function renderProgram(){
 <button type="button" class="secondary" id="addProgramRunBlock">+ Corsa</button>
 <button type="button" class="secondary" id="addProgramStrengthBlock">+ Forza</button>
 </div></div>
-   <div id="programBlocks" class="workBlocks"></div>
+   <div class="programCoachHint">↕ Usa ↑/↓ per ordinare i mezzi · ⧉ duplica un blocco · il volume si aggiorna in tempo reale.</div><div id="programBlocks" class="workBlocks"></div><div id="programLiveTotal" class="programLiveTotal"></div>
    <label>Note programma<textarea id="programNotes" placeholder="Indicazioni tecniche, recuperi, obiettivi..."></textarea></label>
    <button class="primary">Salva nel programma</button>
  </form></div>`:""}`;
@@ -842,6 +1064,7 @@ async function renderProgram(){
            }
          }
        }
+       await notifyAthletesOfProgram(targetAthletes.map(a=>a.id),rawDate,repeats===1?"Nuova settimana programmata":`Mesociclo di ${weekCount} settimane programmato`,"created");
        toast(`${repeats===1?"Settimana":"Mesociclo"} copiato per ${targetAthletes.length} atleta/i`);
        await draw();
      };
@@ -885,6 +1108,13 @@ async function renderProgram(){
  };
  if($("#programForm")){
    addBlockRow("programBlocks","program",{block_kind:"run",quality:"Accelerazione",sets:1,planned_reps:4,distance_m:30});
+   const refreshProgramTotal=()=>{
+     const blocks=collectBlockRows("programBlocks","program");
+     const run=blocks.filter(b=>b.block_kind==="run").reduce((s,b)=>s+volumeForBlock(b,false),0);
+     const strength=blocks.filter(b=>b.block_kind==="strength").reduce((s,b)=>s+volumeForBlock(b,false),0);
+     const el=$("#programLiveTotal");if(el)el.innerHTML=`<b>Volume seduta:</b> ${Math.round(run)} m corsa${strength?` · ${Math.round(strength)} kg volume-load`:""}`;
+   };
+   const pb=$("#programBlocks");if(pb){pb.addEventListener("input",refreshProgramTotal);new MutationObserver(refreshProgramTotal).observe(pb,{childList:true});refreshProgramTotal()}
    if(isStaff()){
      const checks=()=>[...document.querySelectorAll(".programAthCheck")];
      $("#selectAllProgramAth").onclick=()=>checks().forEach(c=>c.checked=true);
@@ -929,6 +1159,7 @@ async function renderProgram(){
          if(be)return toast(be.message);
        }
      }
+     await notifyAthletesOfProgram(athleteIds,$("#programDate").value,$("#programTitle").value.trim()||$("#programType").selectedOptions[0]?.text||"Seduta","created");
      toast(`Seduta programmata per ${athleteIds.length} atleta/i`);
      await renderProgram();
    };
@@ -1148,12 +1379,12 @@ async function renderTraining(){
    </div>
    <div id="trainingDiary"></div>
  </div>
- <div class="card"><h2>Registra allenamento</h2><form id="trainingForm">${athleteField}
+ <div class="card"><div class="sectionTitle"><div><h2>Registra allenamento</h2><p class="muted">Registra lo svolto oppure segnala rapidamente l’assenza.</p></div>${isStaff()?`<button type="button" class="dangerBtn" id="quickAbsentBtn">❌ Segna assenza</button>`:""}</div><form id="trainingForm">${athleteField}
  <label>Data allenamento<input type="date" id="trainingDate" value="${localISODate()}" required></label>
  <label>Tipo seduta<select id="trainingType">${types.map(x=>`<option value="${x.id}">${x.name}</option>`).join("")}</select></label>
  <label>Lavoro reale svolto<textarea id="workDone" placeholder="Serie, ripetizioni, distanze, recuperi, carichi..."></textarea></label>
  <div class="card innerCard structuredWorkCard">
-   <div class="sectionTitle"><div><h3>Lavoro strutturato</h3><p class="muted">Registra anche riscaldamento, mobilità, tecnica e lavori di frequenza/ampiezza.</p></div><div class="rowActions blockButtons">
+   <div class="sectionTitle"><div><h3>Lavoro strutturato</h3><p class="muted">Registra i mezzi nell’ordine reale e, nelle ripetute, le ripetizioni effettive di ogni serie (es. 4,4,3).</p></div><div class="rowActions blockButtons">
 <button type="button" class="secondary" id="addActualWarmupBlock">+ Riscaldamento</button>
 <button type="button" class="secondary" id="addActualMobilityBlock">+ Mobilità</button>
 <button type="button" class="secondary" id="addActualTechniqueBlock">+ Tecnica</button>
@@ -1212,14 +1443,14 @@ async function renderTraining(){
      }else if(att?.status==="maybe"){
        cls="plannedMaybe"; body=`<div class="diaryState">❓ Da confermare${att.expected_time?` · ${String(att.expected_time).slice(0,5)}`:""}</div>`;
      }else{
-       cls="restDay"; body=`<div class="diaryState">○ Riposo${att?.status==="absent"?"":" / nessuna seduta"}</div>`;
+       if(att?.status==="absent"){cls="absentDay";body=`<div class="diaryState">❌ Assente${att.note?`<small>${att.note}</small>`:""}</div>`;}else{cls="restDay"; body=`<div class="diaryState">○ Riposo / nessuna seduta</div>`;}
      }
      cells.push(`<button class="diaryDay ${inMonth?"":"outsideMonth"} ${cls}" data-diary-date="${iso}" ${inMonth?"":"tabindex=-1"}>
        <span class="diaryDayNum">${d.getDate()}</span>${body}
      </button>`);
    }
    $("#trainingDiary").innerHTML=`<div class="diaryWeekdays">${["Lun","Mar","Mer","Gio","Ven","Sab","Dom"].map(x=>`<span>${x}</span>`).join("")}</div><div class="diaryGrid">${cells.join("")}</div>
-   <div class="diaryLegend"><span>✅ Allenamento svolto</span><span>📋 Seduta programmata</span><span>🟡 Presente: da registrare</span><span>❓ Da confermare</span><span>○ Riposo</span></div>`;
+   <div class="diaryLegend"><span>✅ Allenamento svolto</span><span>📋 Seduta programmata</span><span>🟡 Presente: da registrare</span><span>❓ Da confermare</span><span>❌ Assente</span><span>○ Riposo</span></div>`;
    document.querySelectorAll("[data-diary-date]").forEach(b=>b.onclick=e=>{
      if(e.target.closest("[data-plan-id]"))return;
      const date=b.dataset.diaryDate;
@@ -1276,10 +1507,21 @@ async function renderTraining(){
      $("#trainingNotes").value=ps.notes||"";
      $("#plannedSessionId").value=ps.id;
      $("#actualBlocks").innerHTML="";
-     (ps.planned_blocks||[]).forEach(b=>addBlockRow("actualBlocks","actual",{...b,completed_reps:b.planned_reps}));
+     [...(ps.planned_blocks||[])].sort((a,b)=>(a.sort_order||999)-(b.sort_order||999)).forEach(b=>addBlockRow("actualBlocks","actual",{...b,completed_reps:b.planned_reps,completed_reps_per_set:b.reps_per_set||null}));
    }
    sessionStorage.removeItem("programToExecute");
  }
+
+ if(isStaff()&&$("#quickAbsentBtn"))$("#quickAbsentBtn").onclick=async()=>{
+   const athleteId=$("#athleteId").value, date=$("#trainingDate").value;
+   const athlete=aa.find(a=>a.id===athleteId);
+   const note=prompt(`Motivo/nota assenza per ${athlete?.display_name||"atleta"} del ${fmtDate(date)} (opzionale):`,"");
+   if(note===null)return;
+   if(!confirm(`Segnare ${athlete?.display_name||"l’atleta"} ASSENTE il ${fmtDate(date)}?`))return;
+   const {error}=await sb.from("attendance").upsert({athlete_id:athleteId,attendance_date:date,status:"absent",expected_time:null,note:note||null,updated_by:currentUser.id,updated_at:new Date().toISOString()},{onConflict:"athlete_id,attendance_date"});
+   if(error)return toast(error.message);
+   toast("Assenza registrata");await drawDiary();
+ };
 
  $("#trainingForm").onsubmit=async e=>{
    e.preventDefault();
@@ -2015,11 +2257,11 @@ async function renderSettings(){
  <div class="card"><h2>Nuove qualità Sprint</h2><form id="sprintOptionForm"><label>Nome<input id="sprintOptionName" placeholder="es. Sprint resistito" required></label><button class="primary">+ Aggiungi</button></form><div class="pillWrap">${(opts||[]).filter(x=>x.section==="sprint_quality"&&x.active).map(x=>`<span class="badge">${x.name}</span>`).join(" ")||'<span class="muted">Nessuna personalizzata</span>'}</div></div>
  <div class="card"><h2>Nuove qualità Forza</h2><form id="strengthOptionForm"><label>Nome<input id="strengthOptionName" placeholder="es. Isometrica" required></label><button class="primary">+ Aggiungi</button></form><div class="pillWrap">${(opts||[]).filter(x=>x.section==="strength_quality"&&x.active).map(x=>`<span class="badge">${x.name}</span>`).join(" ")||'<span class="muted">Nessuna personalizzata</span>'}</div></div>
 
- <div class="card"><div class="sectionTitle"><h2>Notifiche</h2><button id="enableNotifications" class="primary">🔔 Attiva</button></div><p>Stato browser: <b>${notif}</b></p><p class="note">Le vere push ad app chiusa richiedono un servizio push/backend dedicato.</p></div>
+ <div class="card"><div class="sectionTitle"><h2>Notifiche</h2><button id="openNotificationCenter" class="primary">🔔 Centro notifiche</button></div><p>Stato browser: <b>${notif}</b></p><p class="note">V3.9: push Web Push + reminder automatici tramite Supabase Edge Functions e Cron.</p></div>
  <div class="card"><h2>Regole alert</h2><p class="note">Wellness basso, stanchezza/DOMS/stress elevati, dolore, aumento marcato del TL 7 giorni e trend negativi dei test.</p></div>
  </div>`;
  $("#addTT").onclick=async()=>{const name=prompt("Nuovo tipo allenamento");if(!name)return;const {error}=await sb.from("training_types").insert({owner_coach_id:currentUser.id,name,active:true});if(error)return toast(error.message);toast("Tipo allenamento aggiunto");await renderSettings()};
- $("#enableNotifications").onclick=enableNotifications;
+ if($("#openNotificationCenter"))$("#openNotificationCenter").onclick=async()=>{activeTab="notifications";renderTabs();await render()};
  $("#cfType").onchange=()=>$("#cfOptionsWrap").classList.toggle("hidden",$("#cfType").value!=="select");
  $("#customFieldForm").onsubmit=async e=>{
    e.preventDefault();
