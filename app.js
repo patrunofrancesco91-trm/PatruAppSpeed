@@ -329,13 +329,13 @@ async function getBrowserPushSubscription(){
  return await reg.pushManager.getSubscription();
 }
 async function enableNotifications(){
- if(!("Notification" in window)||!("serviceWorker" in navigator)||!("PushManager" in window)){
+ if(typeof window.Notification==="undefined"||!("serviceWorker" in navigator)||!("PushManager" in window)){
    toast("Push non supportate da questo browser/dispositivo.");return false;
  }
  if(!cfg.PUSH_VAPID_PUBLIC_KEY){
    toast("Chiave push pubblica non configurata.");return false;
  }
- const permission=await Notification.requestPermission();
+ const permission=await window.Notification.requestPermission();
  localStorage.setItem("pamNotifications",permission);
  if(permission!=="granted"){toast("Notifiche non autorizzate");return false}
  try{
@@ -379,12 +379,12 @@ async function disableNotifications(){
  }catch(e){toast(e.message||String(e));return false}
 }
 async function showLocalNotification(title,body,tag){
- if(Notification.permission!=="granted")return;
+ if(typeof window.Notification==="undefined"||window.Notification.permission!=="granted")return;
  try{
    const reg=await navigator.serviceWorker.ready;
    await reg.showNotification(title,{body,tag,icon:"assets/icon-192.png",badge:"assets/icon-192.png",data:{url:"./"}});
  }catch(e){
-   try{new Notification(title,{body,tag})}catch(_){}
+   try{new window.Notification(title,{body,tag})}catch(_){}
  }
 }
 async function notifyAthletesOfProgram(athleteIds,date,title,action="updated"){
@@ -400,7 +400,9 @@ async function notifyAthletesOfProgram(athleteIds,date,title,action="updated"){
  }catch(e){console.warn("Push programma non disponibile",e)}
 }
 async function renderNotifications(){
- const canPush=("Notification" in window)&&("serviceWorker" in navigator)&&("PushManager" in window);
+ try{
+ const hasNotificationApi=typeof window.Notification!=="undefined";
+ const canPush=hasNotificationApi&&("serviceWorker" in navigator)&&("PushManager" in window);
  let sub=null; try{sub=canPush?await getBrowserPushSubscription():null}catch(_){}
  let {data:pref,error:prefErr}=await sb.from("notification_preferences").select("*").eq("user_id",currentUser.id).maybeSingle();
  if(prefErr && !String(prefErr.message||"").includes("0 rows")){
@@ -434,7 +436,7 @@ async function renderNotifications(){
 
  view.innerHTML=`<div class="notificationHero card">
    <div><span class="eyebrow">PATRUNO SPEED TEAM</span><h2>🔔 Notifiche & Reminder</h2><p>Presenze, Wellness, allenamento e aggiornamenti del programma.</p></div>
-   <div class="notificationStatus ${sub?"on":"off"}"><b>${sub?"PUSH ATTIVE":"PUSH NON ATTIVE"}</b><small>${Notification?.permission||"non supportate"}</small></div>
+   <div class="notificationStatus ${sub?"on":"off"}"><b>${sub?"PUSH ATTIVE":"PUSH NON ATTIVE"}</b><small>${hasNotificationApi?(window.Notification.permission||"default"):"non supportate"}</small></div>
  </div>
  <div class="grid two">
    <div class="card">
@@ -491,6 +493,10 @@ async function renderNotifications(){
    const {error}=await sb.functions.invoke("push-notify",{body:{athlete_ids:[athleteId],title:"🔔 Test Patruno Speed Team",body:"Notifiche push configurate correttamente.",kind:"test",url:"./"}});
    toast(error?"Test non inviato: "+error.message:"Notifica test inviata");
  });
+ }catch(e){
+   console.error("renderNotifications mobile error",e);
+   view.innerHTML=`<div class="card"><h2>🔔 Notifiche</h2><div class="note"><b>Impossibile aprire la sezione notifiche su questo dispositivo.</b><br>${e?.message||e}<br><br>Prova ad aggiornare l’app. Su iPhone/iPad aggiungila alla schermata Home; su Android usa Chrome aggiornato.</div></div>`;
+ }
 }
 async function maybeNotifyCoach(rows){
  if(localStorage.getItem("pamNotifications")!=="granted" || Notification.permission!=="granted")return;
