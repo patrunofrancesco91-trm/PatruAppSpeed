@@ -826,7 +826,7 @@ async function clonePlannedSessionToAthletes(session,athleteIds,dateOverride=nul
 
 
 async function copySinglePlannedSession(session,after){
- if(!canEditProgram())return;
+ if(!["coach","assistant_coach"].includes(profile?.role))return;
 
  const aa=await getAthletes();
  const old=document.getElementById("copySinglePlanOverlay");
