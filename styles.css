@@ -255,3 +255,7 @@ body{background:radial-gradient(circle at top right,#fff0f2 0,#fff 32%,#fff8f9 1
 .notificationItem.unread{border-color:#c8102e;background:#fff6f7}.notificationIcon{font-size:24px;display:flex;align-items:flex-start;justify-content:center}
 .notificationItem p{margin:4px 0}.notificationItem small{color:#777}
 @media(max-width:700px){.notificationHero{align-items:flex-start;flex-direction:column}.notificationStatus{width:100%}.reminderRow{grid-template-columns:1fr 105px}}
+
+/* V3.9.1 — copia singola seduta */
+.copySinglePlanModal{width:min(920px,96vw)}
+.copySinglePlanModal .copySummary{margin-top:10px}

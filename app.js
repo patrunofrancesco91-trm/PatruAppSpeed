@@ -824,6 +824,95 @@ async function clonePlannedSessionToAthletes(session,athleteIds,dateOverride=nul
  return true;
 }
 
+
+async function copySinglePlannedSession(session,after){
+ if(!canEditProgram())return;
+
+ const aa=await getAthletes();
+ const old=document.getElementById("copySinglePlanOverlay");
+ if(old)old.remove();
+
+ const el=document.createElement("div");
+ el.id="copySinglePlanOverlay";
+ el.className="modalOverlay";
+ el.innerHTML=`<div class="editModal card copySinglePlanModal">
+   <div class="sectionTitle">
+     <div>
+       <h2>📄 Copia seduta programmata</h2>
+       <p class="muted">${fmtDate(session.session_date)} · ${session.title||"Seduta"}</p>
+     </div>
+     <button class="modalClose secondary">✕</button>
+   </div>
+
+   <label>Nuova data
+     <input type="date" id="copySingleDate" value="${session.session_date}">
+   </label>
+
+   <div class="multiAthleteBox">
+     <div class="sectionTitle">
+       <div>
+         <h3>Destinatari</h3>
+         <p class="muted">Puoi copiare la seduta allo stesso atleta, ad altri o a più atleti contemporaneamente.</p>
+       </div>
+       <div class="rowActions">
+         <button type="button" class="secondary" id="copySingleAll">Tutti</button>
+         <button type="button" class="secondary" id="copySingleNone">Nessuno</button>
+       </div>
+     </div>
+     <div class="athleteCheckGrid">
+       ${aa.map(a=>`<label class="athleteCheck">
+         <input type="checkbox" class="copySingleAthCheck" value="${a.id}" ${a.id===session.athlete_id?"checked":""}>
+         <span>${a.display_name}</span>
+       </label>`).join("")}
+     </div>
+   </div>
+
+   <div class="copySummary note">
+     Verranno copiati anche tutti i blocchi della seduta: riscaldamento, mobilità, tecnica, corsa, forza e relative impostazioni.
+   </div>
+
+   <div class="modalActions">
+     <button type="button" class="secondary modalCancel">Annulla</button>
+     <button type="button" class="primary" id="copySingleConfirm">Copia seduta</button>
+   </div>
+ </div>`;
+ document.body.appendChild(el);
+
+ const close=()=>el.remove();
+ el.querySelector(".modalClose").onclick=close;
+ el.querySelector(".modalCancel").onclick=close;
+ el.onclick=e=>{if(e.target===el)close()};
+
+ $("#copySingleAll").onclick=()=>document.querySelectorAll(".copySingleAthCheck").forEach(c=>c.checked=true);
+ $("#copySingleNone").onclick=()=>document.querySelectorAll(".copySingleAthCheck").forEach(c=>c.checked=false);
+
+ $("#copySingleConfirm").onclick=async()=>{
+   const athleteIds=[...document.querySelectorAll(".copySingleAthCheck:checked")].map(c=>c.value);
+   const newDate=$("#copySingleDate").value;
+
+   if(!newDate)return toast("Seleziona la data di destinazione.");
+   if(!athleteIds.length)return toast("Seleziona almeno un atleta.");
+
+   if(!confirm(`Copiare questa seduta al ${fmtDate(newDate)} per ${athleteIds.length} atleta/i?`))return;
+
+   const copied={...session,session_date:newDate};
+
+   const ok=await clonePlannedSessionToAthletes(copied,athleteIds,newDate);
+   if(!ok)return;
+
+   await notifyAthletesOfProgram(
+     athleteIds,
+     newDate,
+     session.title||"Seduta copiata",
+     "created"
+   );
+
+   close();
+   toast(`Seduta copiata per ${athleteIds.length} atleta/i`);
+   if(after)await after();
+ };
+}
+
 async function editPlannedSession(session,after){
  if(!["coach","assistant_coach"].includes(profile?.role))return;
  const aa=await getAthletes();
@@ -1003,7 +1092,7 @@ async function renderProgram(){
          ${s.notes?`<p>${s.notes}</p>`:""}
          <div class="programActions">
            ${profile.role!=="doctor"&&!completed.has(s.id)&&s.status!=="completed"?`<button class="primary smallBtn" data-execute-program="${s.id}">Registra svolto</button>`:""}
-           ${canEditProgram()?`<button class="editBtn smallBtn" data-edit-program="${s.id}">✏️ Modifica</button><button class="secondary smallBtn" data-share-program="${s.id}">👥 Aggiungi ad altri</button><button class="dangerBtn smallBtn" data-delete-program="${s.id}">🗑️ Elimina</button>`:""}
+           ${canEditProgram()?`<button class="editBtn smallBtn" data-edit-program="${s.id}">✏️ Modifica</button><button class="secondary smallBtn" data-copy-program="${s.id}">📄 Copia seduta</button><button class="secondary smallBtn" data-share-program="${s.id}">👥 Aggiungi ad altri</button><button class="dangerBtn smallBtn" data-delete-program="${s.id}">🗑️ Elimina</button>`:""}
          </div>
        </div>`).join(""):'<div class="programRest">Riposo / nessuna seduta programmata</div>'}
      </div>`;
@@ -1079,6 +1168,10 @@ async function renderProgram(){
    document.querySelectorAll("[data-edit-program]").forEach(b=>b.onclick=async()=>{
      const s=(p||[]).find(x=>x.id===b.dataset.editProgram);
      if(s)await editPlannedSession(s,draw);
+   });
+   document.querySelectorAll("[data-copy-program]").forEach(b=>b.onclick=async()=>{
+     const s=(p||[]).find(x=>x.id===b.dataset.copyProgram);
+     if(s)await copySinglePlannedSession(s,draw);
    });
    document.querySelectorAll("[data-share-program]").forEach(b=>b.onclick=async()=>{
      const s=(p||[]).find(x=>x.id===b.dataset.shareProgram);
