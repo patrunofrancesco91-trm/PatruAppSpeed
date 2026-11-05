@@ -1,4 +1,5 @@
 
+const APP_BUILD="V3.9.7";
 const cfg=window.APP_CONFIG||{};
 const sb = (cfg.SUPABASE_URL && !cfg.SUPABASE_URL.startsWith("INSERISCI"))
   ? supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY)
@@ -410,7 +411,8 @@ async function renderNotifications(){
  }
  if(!pref){
    const defaults={user_id:currentUser.id,attendance_enabled:true,wellness_enabled:true,training_enabled:true,program_enabled:true,attendance_time:"12:00",wellness_time:"16:30",training_time:"21:00",timezone:"Europe/Rome"};
-   const {data:newPref}=await sb.from("notification_preferences").upsert(defaults,{onConflict:"user_id"}).select("*").single();
+   const {data:newPref,error:newPrefErr}=await sb.from("notification_preferences").upsert(defaults,{onConflict:"user_id"}).select("*").single();
+   if(newPrefErr)throw new Error("Preferenze notifiche: "+newPrefErr.message);
    pref=newPref||defaults;
  }
  const {data:notes}=await sb.from("notifications").select("*").eq("user_id",currentUser.id).order("created_at",{ascending:false}).limit(30);
@@ -435,7 +437,7 @@ async function renderNotifications(){
  }
 
  view.innerHTML=`<div class="notificationHero card">
-   <div><span class="eyebrow">PATRUNO SPEED TEAM</span><h2>🔔 Notifiche & Reminder</h2><p>Presenze, Wellness, allenamento e aggiornamenti del programma.</p></div>
+   <div><span class="eyebrow">PATRUNO SPEED TEAM · ${APP_BUILD}</span><h2>🔔 Notifiche & Reminder</h2><p>Presenze, Wellness, allenamento e aggiornamenti del programma.</p></div>
    <div class="notificationStatus ${sub?"on":"off"}"><b>${sub?"PUSH ATTIVE":"PUSH NON ATTIVE"}</b><small>${hasNotificationApi?(window.Notification.permission||"default"):"non supportate"}</small></div>
  </div>
  <div class="grid two">
@@ -1768,12 +1770,14 @@ async function renderTraining(){
      .eq("session_date",date)
      .eq("status","planned");
 
-   if(skipError)return toast("Assenza salvata, ma errore nell'aggiornare il programma: "+skipError.message);
-
    $("#plannedSessionId").value="";
    $("#actualBlocks").innerHTML="";
-   toast("Assenza registrata · sedute programmate del giorno segnate come saltate");
    await drawDiary();
+   if(skipError){
+     toast("Assenza registrata. Avviso: programma non aggiornato: "+skipError.message);
+   }else{
+     toast("Assenza registrata · sedute programmate del giorno segnate come saltate");
+   }
  };
 
  $("#trainingForm").onsubmit=async e=>{

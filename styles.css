@@ -309,3 +309,6 @@ body.reorderingBlocks{
   opacity:.65;
   cursor:not-allowed;
 }
+
+/* V3.9.7 stabilizzazione */
+.note code{white-space:normal;word-break:break-word}
