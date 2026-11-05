@@ -284,3 +284,28 @@ body.reorderingBlocks{
   -webkit-user-select:none;
   overscroll-behavior:none;
 }
+
+/* V3.9.4 — Modifica Programma più pulita */
+.cleanPlanEdit{width:min(1120px,97vw);max-height:94vh;overflow:auto;padding:0}
+.editPlanHeader{position:sticky;top:0;z-index:6;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:18px 20px;background:linear-gradient(135deg,#181818,#3a0b14);color:#fff;border-radius:16px 16px 0 0}
+.editPlanHeader .muted{color:#ddd}.editPlanHeader h2{margin:2px 0 4px}
+.editPlanSection{margin:14px 16px;padding:16px;border:1px solid #ececef;border-radius:14px;background:#fff}
+.editPlanSectionTitle{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+.editPlanSectionTitle h3{margin:0 0 3px}
+.quickAddGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:14px}
+.quickAddBtn{min-height:44px;font-weight:700}
+.cleanWorkBlocks{display:grid;gap:12px}
+.cleanPlanEdit .workBlockRow{border:1px solid #e2e2e6;border-left:5px solid #b30c26;border-radius:14px;background:#fcfcfd;padding:14px;box-shadow:0 4px 14px rgba(0,0,0,.04)}
+.cleanPlanEdit .workBlockRow:hover{border-color:#d4b0b7;box-shadow:0 6px 18px rgba(0,0,0,.06)}
+.cleanPlanEdit .blockOrderTools{display:flex;gap:6px;align-items:center;margin-bottom:8px}
+.cleanPlanEdit .blockOrdinal{display:inline-flex;min-width:28px;height:28px;border-radius:999px;align-items:center;justify-content:center;background:#191919;color:#fff;font-weight:800;margin-bottom:8px}
+.copyToOthers summary{cursor:pointer;list-style:none;font-size:16px}.copyToOthers summary::-webkit-details-marker{display:none}
+.stickyEditActions{position:sticky;bottom:0;z-index:6;display:flex;justify-content:flex-end;gap:10px;padding:14px 18px;background:rgba(255,255,255,.97);border-top:1px solid #e8e8eb;backdrop-filter:blur(8px);border-radius:0 0 16px 16px}
+.stickyEditActions .primary{min-width:170px}
+@media(max-width:800px){.quickAddGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.editPlanSection{margin:10px;padding:12px}.editPlanHeader{padding:15px}.stickyEditActions{justify-content:stretch}.stickyEditActions button{flex:1}}
+
+/* V3.9.5 — salvataggio allenamento robusto */
+#saveTrainingBtn:disabled,#saveTrainingVolume:disabled,#savePlannedEdit:disabled{
+  opacity:.65;
+  cursor:not-allowed;
+}

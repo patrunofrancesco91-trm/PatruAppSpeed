@@ -998,47 +998,59 @@ async function editPlannedSession(session,after){
  const el=document.createElement("div");
  el.id="plannedEditOverlay";
  el.className="modalOverlay";
- el.innerHTML=`<div class="editModal card plannedEditModal">
-   <div class="sectionTitle">
-     <div><h2>Modifica seduta programmata</h2><p class="muted">${fmtDate(session.session_date)}</p></div>
+ el.innerHTML=`<div class="editModal card plannedEditModal cleanPlanEdit">
+   <div class="editPlanHeader">
+     <div><span class="eyebrow">PROGRAMMA</span><h2>Modifica seduta programmata</h2><p class="muted">${fmtDate(session.session_date)}</p></div>
      <button class="modalClose secondary">✕</button>
    </div>
 
-   <div class="grid two">
-     <label>Data<input type="date" id="editPlanDate" value="${session.session_date}" required></label>
-     <label>Tipo seduta<select id="editPlanType">${types.map(t=>`<option value="${t.id}" ${t.id===session.training_type_id?"selected":""}>${t.name}</option>`).join("")}</select></label>
+   <div class="editPlanSection">
+     <div class="editPlanSectionTitle"><div><h3>1. Dati seduta</h3><p class="muted">Data, tipologia e focus principale.</p></div></div>
+     <div class="grid two">
+       <label>Data<input type="date" id="editPlanDate" value="${session.session_date}" required></label>
+       <label>Tipo seduta<select id="editPlanType">${types.map(t=>`<option value="${t.id}" ${t.id===session.training_type_id?"selected":""}>${t.name}</option>`).join("")}</select></label>
+     </div>
+     <label>Titolo / focus<input id="editPlanTitle" value="${(session.title||"").replace(/"/g,"&quot;")}" placeholder="es. Accelerazione + forza"></label>
    </div>
 
-   <label>Titolo / focus<input id="editPlanTitle" value="${(session.title||"").replace(/"/g,"&quot;")}"></label>
-
-   <div class="sectionTitle">
-     <div><h3>Blocchi</h3><p class="muted">Puoi correggere, aggiungere o eliminare blocchi.</p></div>
-     <div class="rowActions blockButtons">
-       <button type="button" class="secondary" id="epWarmup">+ Riscaldamento</button>
-       <button type="button" class="secondary" id="epMobility">+ Mobilità</button>
-       <button type="button" class="secondary" id="epTechnique">+ Tecnica</button>
-       <button type="button" class="secondary" id="epFreq">+ Frequenza/Ampiezza</button>
-       <button type="button" class="secondary" id="epRun">+ Corsa</button>
-       <button type="button" class="secondary" id="epStrength">+ Forza</button>
+   <div class="editPlanSection blocksSection">
+     <div class="editPlanSectionTitle">
+       <div><h3>2. Mezzi di allenamento</h3><p class="muted">Trascina ☰ per cambiare ordine. Puoi duplicare, correggere o eliminare ogni blocco.</p></div>
      </div>
-   </div>
-   <div id="editPlannedBlocks" class="workBlocks"></div>
 
-   <label>Note programma<textarea id="editPlanNotes">${session.notes||""}</textarea></label>
+     <div class="quickAddGrid">
+       <button type="button" class="secondary quickAddBtn" id="epWarmup">🔥 Riscaldamento</button>
+       <button type="button" class="secondary quickAddBtn" id="epMobility">🧘 Mobilità</button>
+       <button type="button" class="secondary quickAddBtn" id="epTechnique">🏃 Tecnica</button>
+       <button type="button" class="secondary quickAddBtn" id="epFreq">⚡ Frequenza/Ampiezza</button>
+       <button type="button" class="secondary quickAddBtn" id="epRun">⏱️ Corsa</button>
+       <button type="button" class="secondary quickAddBtn" id="epStrength">🏋️ Forza</button>
+     </div>
 
-   <div class="multiAthleteBox">
-     <div class="sectionTitle">
-       <div><h3>Aggiungi questa seduta ad altri atleti</h3><p class="muted">La seduta modificata verrà copiata anche agli atleti selezionati.</p></div>
-       <div class="rowActions"><button type="button" class="secondary" id="editPlanSelectAll">Tutti</button><button type="button" class="secondary" id="editPlanClearAll">Nessuno</button></div>
-     </div>
-     <div class="athleteCheckGrid">
-       ${aa.filter(a=>a.id!==session.athlete_id).map(a=>`<label class="athleteCheck"><input type="checkbox" class="editPlanAthCheck" value="${a.id}"><span>${a.display_name}</span></label>`).join("")}
-     </div>
+     <div id="editPlannedBlocks" class="workBlocks cleanWorkBlocks"></div>
    </div>
 
-   <div class="modalActions">
+   <div class="editPlanSection">
+     <div class="editPlanSectionTitle"><div><h3>3. Note</h3><p class="muted">Indicazioni tecniche, recuperi generali o adattamenti.</p></div></div>
+     <label>Note programma<textarea id="editPlanNotes" placeholder="Note per atleta e coach...">${session.notes||""}</textarea></label>
+   </div>
+
+   <details class="editPlanSection copyToOthers">
+     <summary><b>4. Aggiungi anche ad altri atleti</b><span class="muted"> opzionale</span></summary>
+     <div class="multiAthleteBox">
+       <div class="sectionTitle">
+         <div><p class="muted">La versione modificata verrà copiata agli atleti selezionati.</p></div>
+         <div class="rowActions"><button type="button" class="secondary" id="editPlanSelectAll">Tutti</button><button type="button" class="secondary" id="editPlanClearAll">Nessuno</button></div>
+       </div>
+       <div class="athleteCheckGrid">
+         ${aa.filter(a=>a.id!==session.athlete_id).map(a=>`<label class="athleteCheck"><input type="checkbox" class="editPlanAthCheck" value="${a.id}"><span>${a.display_name}</span></label>`).join("")}
+       </div>
+     </div>
+   </details>
+
+   <div class="stickyEditActions">
      <button type="button" class="secondary modalCancel">Annulla</button>
-     <button type="button" class="primary" id="savePlannedEdit">Salva modifiche</button>
+     <button type="button" class="primary" id="savePlannedEdit">💾 Salva modifiche</button>
    </div>
  </div>`;
  document.body.appendChild(el);
@@ -1062,44 +1074,67 @@ async function editPlannedSession(session,after){
  $("#editPlanClearAll").onclick=()=>document.querySelectorAll(".editPlanAthCheck").forEach(c=>c.checked=false);
 
  $("#savePlannedEdit").onclick=async()=>{
-   if(!confirm("Salvare le modifiche alla seduta programmata?"))return;
+   const btn=$("#savePlannedEdit");
+   if(btn.disabled)return;
+
+   const newDate=$("#editPlanDate").value;
+   const newType=$("#editPlanType").value;
+   const newTitle=$("#editPlanTitle").value.trim();
+   const newNotes=$("#editPlanNotes").value;
    const newBlocks=collectBlockRows("editPlannedBlocks","program");
 
-   const {error:ue}=await sb.from("planned_sessions").update({
-     session_date:$("#editPlanDate").value,
-     training_type_id:$("#editPlanType").value,
-     title:$("#editPlanTitle").value.trim(),
-     notes:$("#editPlanNotes").value
-   }).eq("id",session.id);
-   if(ue)return toast(ue.message);
+   if(!newDate)return toast("Inserisci una data valida.");
+   if(!newType)return toast("Seleziona il tipo di seduta.");
+   if(!newBlocks.length && !newTitle && !newNotes)return toast("La seduta non può essere completamente vuota.");
 
-   const {error:de}=await sb.from("planned_blocks").delete().eq("planned_session_id",session.id);
-   if(de)return toast(de.message);
+   const oldBlocks=[...(session.planned_blocks||[])].map(({id,planned_session_id,planned_volume_m,created_at,...b})=>b);
+   if(!confirm("Salvare le modifiche alla seduta programmata?"))return;
 
-   if(newBlocks.length){
-     const payload=newBlocks.map(b=>({planned_session_id:session.id,...b}));
-     const {error:ie}=await sb.from("planned_blocks").insert(payload);
-     if(ie)return toast(ie.message);
+   btn.disabled=true;
+   const oldText=btn.textContent;
+   btn.textContent="Salvataggio…";
+
+   try{
+     const {error:ue}=await sb.from("planned_sessions").update({
+       session_date:newDate,
+       training_type_id:newType,
+       title:newTitle,
+       notes:newNotes
+     }).eq("id",session.id);
+     if(ue)throw ue;
+
+     const {error:de}=await sb.from("planned_blocks").delete().eq("planned_session_id",session.id);
+     if(de)throw de;
+
+     if(newBlocks.length){
+       const payload=newBlocks.map(b=>({planned_session_id:session.id,...b}));
+       const {error:ie}=await sb.from("planned_blocks").insert(payload);
+       if(ie){
+         if(oldBlocks.length){
+           await sb.from("planned_blocks").insert(oldBlocks.map(b=>({planned_session_id:session.id,...b})));
+         }
+         throw new Error("Errore nel salvataggio dei lavori. I blocchi precedenti sono stati ripristinati. "+ie.message);
+       }
+     }
+
+     const targetAthletes=[...document.querySelectorAll(".editPlanAthCheck:checked")].map(c=>c.value);
+     if(targetAthletes.length){
+       const updatedSession={...session,session_date:newDate,training_type_id:newType,title:newTitle,notes:newNotes,planned_blocks:newBlocks};
+       const ok=await clonePlannedSessionToAthletes(updatedSession,targetAthletes);
+       if(!ok)throw new Error("Seduta salvata, ma copia agli altri atleti non completata.");
+     }
+
+     await notifyAthletesOfProgram([session.athlete_id,...targetAthletes],newDate,newTitle||"Seduta","updated");
+     close();
+     toast(targetAthletes.length?`Seduta modificata e aggiunta a ${targetAthletes.length} atleta/i`:"Seduta programmata modificata");
+     if(after)await after();
+   }catch(e){
+     console.error(e);
+     toast(e.message||String(e));
+   }finally{
+     btn.disabled=false;
+     btn.textContent=oldText;
    }
-
-   const targetAthletes=[...document.querySelectorAll(".editPlanAthCheck:checked")].map(c=>c.value);
-   if(targetAthletes.length){
-     const updatedSession={
-       ...session,
-       session_date:$("#editPlanDate").value,
-       training_type_id:$("#editPlanType").value,
-       title:$("#editPlanTitle").value.trim(),
-       notes:$("#editPlanNotes").value,
-       planned_blocks:newBlocks
-     };
-     const ok=await clonePlannedSessionToAthletes(updatedSession,targetAthletes);
-     if(!ok)return;
-   }
-
-   await notifyAthletesOfProgram([session.athlete_id,...targetAthletes],$("#editPlanDate").value,$("#editPlanTitle").value.trim()||"Seduta","updated");
-   close();
-   toast(targetAthletes.length?`Seduta modificata e aggiunta a ${targetAthletes.length} atleta/i`:"Seduta programmata modificata");
-   if(after)await after();
  };
 }
 
@@ -1466,18 +1501,43 @@ async function editTrainingVolume(trainingId,after){
  $("#volAddStrength").onclick=()=>add({block_kind:"strength",quality:"Forza",exercise:"Squat",sets:4,planned_reps:4,completed_reps:4,load_kg:0});
 
  $("#saveTrainingVolume").onclick=async()=>{
+   const btn=$("#saveTrainingVolume");
+   if(btn.disabled)return;
+
    const newBlocks=collectBlockRows("editVolumeBlocks","actual");
+   const backup=(blocks||[]).map(({id,training_id,actual_volume_m,created_at,...b})=>b);
+
    if(!confirm("Salvare il volume corretto della seduta?"))return;
-   const {error:de}=await sb.from("training_blocks").delete().eq("training_id",trainingId);
-   if(de)return toast(de.message);
-   if(newBlocks.length){
-     const payload=newBlocks.map(b=>({training_id:trainingId,...b}));
-     const {error:ie}=await sb.from("training_blocks").insert(payload);
-     if(ie)return toast(ie.message);
+
+   btn.disabled=true;
+   const oldText=btn.textContent;
+   btn.textContent="Salvataggio…";
+
+   try{
+     const {error:de}=await sb.from("training_blocks").delete().eq("training_id",trainingId);
+     if(de)throw de;
+
+     if(newBlocks.length){
+       const payload=newBlocks.map(b=>({training_id:trainingId,...b}));
+       const {error:ie}=await sb.from("training_blocks").insert(payload);
+       if(ie){
+         if(backup.length){
+           await sb.from("training_blocks").insert(backup.map(b=>({training_id:trainingId,...b})));
+         }
+         throw new Error("Errore nel salvataggio del volume. I dati precedenti sono stati ripristinati. "+ie.message);
+       }
+     }
+
+     close();
+     toast("Volume seduta aggiornato");
+     if(after)await after();
+   }catch(err){
+     console.error(err);
+     toast(err.message||String(err));
+   }finally{
+     btn.disabled=false;
+     btn.textContent=oldText;
    }
-   close();
-   toast("Volume seduta aggiornato");
-   if(after)await after();
  };
 }
 
@@ -1571,7 +1631,7 @@ async function renderTraining(){
   <option value="9">9 — Quasi massimale</option><option value="10">10 — Massimale</option>
  </select></label></div>
  <label>Dolore / problemi post<textarea id="painPost"></textarea></label><label>Note<textarea id="trainingNotes"></textarea></label>
- <button class="primary">Salva allenamento</button></form></div><div id="trainRecent"></div>`;
+ <button type="submit" class="primary" id="saveTrainingBtn">💾 Salva allenamento</button></form></div><div id="trainRecent"></div>`;
 
  let diaryDate=new Date();diaryDate.setDate(1);diaryDate.setHours(12,0,0,0);
  const diaryAthleteId=()=>isStaff()?$("#diaryAth").value:athleteProfile.id;
@@ -1712,18 +1772,107 @@ async function renderTraining(){
 
  $("#trainingForm").onsubmit=async e=>{
    e.preventDefault();
-   const athleteId=$("#athleteId").value,trainingDate=$("#trainingDate").value,trainingTypeId=$("#trainingType").value;
+
+   const submitBtn=e.submitter||$("#trainingForm button[type=submit]");
+   if(submitBtn?.disabled)return;
+
+   const athleteId=$("#athleteId").value;
+   const trainingDate=$("#trainingDate").value;
+   const trainingTypeId=$("#trainingType").value;
+   const duration=Number($("#duration").value||0);
+   const srpe=Number($("#srpe").value||0);
+   const blocksDraft=collectBlockRows("actualBlocks","actual");
+
+   if(!athleteId)return toast("Seleziona un atleta.");
+   if(!trainingDate)return toast("Inserisci la data dell’allenamento.");
+   if(!trainingTypeId)return toast("Seleziona il tipo di seduta.");
+   if(duration<=0)return toast("Inserisci una durata valida.");
+
    let plannedId=$("#plannedSessionId").value||null;
    if(!plannedId){
-     const {data:match}=await sb.from("planned_sessions").select("id").eq("athlete_id",athleteId).eq("session_date",trainingDate).eq("training_type_id",trainingTypeId).eq("status","planned").limit(1);
+     const {data:match,error:me}=await sb.from("planned_sessions")
+       .select("id")
+       .eq("athlete_id",athleteId)
+       .eq("session_date",trainingDate)
+       .eq("training_type_id",trainingTypeId)
+       .eq("status","planned")
+       .limit(1);
+     if(me)return toast(me.message);
      plannedId=match?.[0]?.id||null;
    }
-   const payload={athlete_id:athleteId,training_date:trainingDate,training_type_id:trainingTypeId,planned_session_id:plannedId,duration_min:+$("#duration").value,srpe:+$("#srpe").value,work_done:$("#workDone").value,times_results:$("#timesResults").value,pain_post:$("#painPost").value,notes:$("#trainingNotes").value};
-   const {data:saved,error}=await sb.from("trainings").insert(payload).select("id").single();if(error)return toast(error.message);
-   const blocks=collectBlockRows("actualBlocks","actual").map(b=>({training_id:saved.id,...b}));
-   if(blocks.length){const {error:be}=await sb.from("training_blocks").insert(blocks);if(be)return toast(be.message)}
-   if(plannedId)await sb.from("planned_sessions").update({status:"completed"}).eq("id",plannedId);
-   toast("Allenamento salvato · Performance aggiornata");await renderTraining();
+
+   const payload={
+     athlete_id:athleteId,
+     training_date:trainingDate,
+     training_type_id:trainingTypeId,
+     planned_session_id:plannedId,
+     duration_min:duration,
+     srpe:srpe,
+     work_done:$("#workDone").value,
+     times_results:$("#timesResults").value,
+     pain_post:$("#painPost").value,
+     notes:$("#trainingNotes").value
+   };
+
+   const oldText=submitBtn?.textContent||"Salva allenamento";
+   if(submitBtn){
+     submitBtn.disabled=true;
+     submitBtn.textContent="Salvataggio…";
+   }
+
+   let savedId=null;
+
+   try{
+     const {data:saved,error}=await sb.from("trainings").insert(payload).select("id").single();
+     if(error)throw error;
+     savedId=saved.id;
+
+     if(blocksDraft.length){
+       const blocks=blocksDraft.map(b=>({training_id:saved.id,...b}));
+       const {error:be}=await sb.from("training_blocks").insert(blocks);
+       if(be){
+         await sb.from("trainings").delete().eq("id",saved.id);
+         savedId=null;
+         throw new Error("Errore nel salvataggio dei lavori strutturati. La seduta incompleta è stata annullata. "+be.message);
+       }
+     }
+
+     if(plannedId){
+       const {error:pe}=await sb.from("planned_sessions").update({status:"completed"}).eq("id",plannedId);
+       if(pe)console.warn("Programma non aggiornato a completed",pe);
+     }
+
+     // Se l'atleta non era segnato assente, registriamo automaticamente la presenza.
+     const {data:att}=await sb.from("attendance")
+       .select("status")
+       .eq("athlete_id",athleteId)
+       .eq("attendance_date",trainingDate)
+       .maybeSingle();
+
+     if(att?.status!=="absent"){
+       await sb.from("attendance").upsert({
+         athlete_id:athleteId,
+         attendance_date:trainingDate,
+         status:"present",
+         expected_time:null,
+         note:att?.status==="maybe"?"Confermato da allenamento registrato":null,
+         updated_by:currentUser.id,
+         updated_at:new Date().toISOString()
+       },{onConflict:"athlete_id,attendance_date"});
+     }
+
+     toast("Allenamento salvato · Performance aggiornata");
+     await renderTraining();
+
+   }catch(err){
+     console.error(err);
+     toast(err.message||String(err));
+   }finally{
+     if(submitBtn){
+       submitBtn.disabled=false;
+       submitBtn.textContent=oldText;
+     }
+   }
  };
  await drawDiary();
  await renderRecentTraining();
