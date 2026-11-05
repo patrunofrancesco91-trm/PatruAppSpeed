@@ -709,6 +709,79 @@ function updateBlockLiveSummary(row,prefix){
  else if(kind==='strength'&&load>0)summary.innerHTML=`<b>${Math.round(load*sets*(prefix==='actual'?completed:planned))} kg volume-load</b>`;
  else summary.innerHTML='';
 }
+
+function enableBlockDrag(row,containerId){
+ const c=document.getElementById(containerId);
+ const handle=row.querySelector(".dragHandle");
+ if(!c||!handle)return;
+
+ let dragging=false;
+ let placeholder=null;
+
+ const start=()=>{
+   dragging=true;
+   row.classList.add("draggingBlock");
+   placeholder=document.createElement("div");
+   placeholder.className="blockDropPlaceholder";
+   placeholder.style.height=`${Math.max(56,row.getBoundingClientRect().height)}px`;
+   row.after(placeholder);
+   document.body.classList.add("reorderingBlocks");
+ };
+
+ const move=(clientX,clientY)=>{
+   if(!dragging)return;
+   const target=document.elementFromPoint(clientX,clientY)?.closest(".workBlockRow");
+   if(!target||target===row||target.parentElement!==c)return;
+   const r=target.getBoundingClientRect();
+   if(clientY<r.top+r.height/2)c.insertBefore(placeholder,target);
+   else c.insertBefore(placeholder,target.nextSibling);
+ };
+
+ const finish=()=>{
+   if(!dragging)return;
+   dragging=false;
+   if(placeholder?.parentNode){
+     placeholder.parentNode.insertBefore(row,placeholder);
+     placeholder.remove();
+   }
+   row.classList.remove("draggingBlock");
+   document.body.classList.remove("reorderingBlocks");
+   refreshBlockOrder(containerId);
+ };
+
+ handle.setAttribute("draggable","true");
+
+ handle.addEventListener("dragstart",e=>{
+   start();
+   try{e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain","block")}catch(_){}
+ });
+ handle.addEventListener("dragend",finish);
+
+ c.addEventListener("dragover",e=>{
+   if(!dragging)return;
+   e.preventDefault();
+   move(e.clientX,e.clientY);
+ });
+
+ handle.addEventListener("pointerdown",e=>{
+   if(e.pointerType==="mouse")return;
+   e.preventDefault();
+   start();
+   try{handle.setPointerCapture(e.pointerId)}catch(_){}
+ });
+ handle.addEventListener("pointermove",e=>{
+   if(!dragging||e.pointerType==="mouse")return;
+   e.preventDefault();
+   move(e.clientX,e.clientY);
+ });
+ handle.addEventListener("pointerup",e=>{
+   if(e.pointerType==="mouse")return;
+   e.preventDefault();
+   finish();
+ });
+ handle.addEventListener("pointercancel",finish);
+}
+
 function addBlockRow(containerId,prefix,data={}){
  const c=document.getElementById(containerId); if(!c)return;
  const idx=Date.now()+Math.floor(Math.random()*1000);
@@ -734,6 +807,7 @@ function addBlockRow(containerId,prefix,data={}){
    addBlockRow(containerId,prefix,clone);
    const added=c.lastElementChild;row.after(added);refreshBlockOrder(containerId);
  };
+ enableBlockDrag(row,containerId);
  row.querySelector(`.${prefix}Kind`).onchange=refresh;
  row.querySelectorAll('input,select').forEach(x=>x.addEventListener('input',()=>updateBlockLiveSummary(row,prefix)));
  refresh();refreshBlockOrder(containerId);
@@ -1611,9 +1685,29 @@ async function renderTraining(){
    const note=prompt(`Motivo/nota assenza per ${athlete?.display_name||"atleta"} del ${fmtDate(date)} (opzionale):`,"");
    if(note===null)return;
    if(!confirm(`Segnare ${athlete?.display_name||"l’atleta"} ASSENTE il ${fmtDate(date)}?`))return;
-   const {error}=await sb.from("attendance").upsert({athlete_id:athleteId,attendance_date:date,status:"absent",expected_time:null,note:note||null,updated_by:currentUser.id,updated_at:new Date().toISOString()},{onConflict:"athlete_id,attendance_date"});
+   const {error}=await sb.from("attendance").upsert({
+     athlete_id:athleteId,
+     attendance_date:date,
+     status:"absent",
+     expected_time:null,
+     note:note||null,
+     updated_by:currentUser.id,
+     updated_at:new Date().toISOString()
+   },{onConflict:"athlete_id,attendance_date"});
    if(error)return toast(error.message);
-   toast("Assenza registrata");await drawDiary();
+
+   const {error:skipError}=await sb.from("planned_sessions")
+     .update({status:"skipped"})
+     .eq("athlete_id",athleteId)
+     .eq("session_date",date)
+     .eq("status","planned");
+
+   if(skipError)return toast("Assenza salvata, ma errore nell'aggiornare il programma: "+skipError.message);
+
+   $("#plannedSessionId").value="";
+   $("#actualBlocks").innerHTML="";
+   toast("Assenza registrata · sedute programmate del giorno segnate come saltate");
+   await drawDiary();
  };
 
  $("#trainingForm").onsubmit=async e=>{

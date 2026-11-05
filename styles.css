@@ -259,3 +259,28 @@ body{background:radial-gradient(circle at top right,#fff0f2 0,#fff 32%,#fff8f9 1
 /* V3.9.1 — copia singola seduta */
 .copySinglePlanModal{width:min(920px,96vw)}
 .copySinglePlanModal .copySummary{margin-top:10px}
+
+/* V3.9.3 — riordino mezzi con trascinamento */
+.dragHandle{
+  cursor:grab;
+  user-select:none;
+  -webkit-user-select:none;
+  touch-action:none;
+  font-size:22px;
+  padding:6px 9px;
+  border-radius:8px;
+  background:#f3f3f4;
+}
+.dragHandle:active{cursor:grabbing}
+.draggingBlock{opacity:.42;transform:scale(.99)}
+.blockDropPlaceholder{
+  border:2px dashed #c8102e;
+  border-radius:12px;
+  background:#fff4f6;
+  margin:8px 0;
+}
+body.reorderingBlocks{
+  user-select:none;
+  -webkit-user-select:none;
+  overscroll-behavior:none;
+}
