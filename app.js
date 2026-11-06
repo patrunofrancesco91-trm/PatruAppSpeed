@@ -1,5 +1,5 @@
 
-const APP_BUILD="V4.1";
+const APP_BUILD="V4.1.2";
 const cfg=window.APP_CONFIG||{};
 const sb = (cfg.SUPABASE_URL && !cfg.SUPABASE_URL.startsWith("INSERISCI"))
   ? supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY)
@@ -606,8 +606,36 @@ async function renderNotifications(){
  };
  document.querySelectorAll("[data-test-push]").forEach(b=>b.onclick=async()=>{
    const athleteId=b.dataset.testPush;
-   const {error}=await sb.functions.invoke("push-notify",{body:{athlete_ids:[athleteId],title:"🔔 Test Patruno Speed Team",body:"Notifiche push configurate correttamente.",kind:"test",url:"./"}});
-   toast(error?"Test non inviato: "+error.message:"Notifica test inviata");
+   try{
+     const {data,error}=await sb.functions.invoke("push-notify",{body:{
+       athlete_ids:[athleteId],
+       title:"🔔 Test Patruno Speed Team",
+       body:"Notifiche push configurate correttamente.",
+       kind:"test",
+       url:"./"
+     }});
+     if(error){
+       let detail=error.message||"Errore Edge Function";
+       try{
+         if(error.context){
+           const clone=error.context.clone?error.context.clone():error.context;
+           if(clone?.json){
+             const j=await clone.json();
+             detail=j?.error||j?.message||JSON.stringify(j);
+           }else if(clone?.text){
+             detail=await clone.text();
+           }
+         }
+       }catch(_){}
+       console.error("push-notify test error",error);
+       toast("Test non inviato: "+detail);
+       return;
+     }
+     toast(`Test inviato · destinatari ${data?.targets??"?"} · push ${data?.sent??"?"}`);
+   }catch(e){
+     console.error(e);
+     toast("Test non inviato: "+(e?.message||String(e)));
+   }
  });
  }catch(e){
    console.error("renderNotifications mobile error",e);
@@ -624,24 +652,108 @@ async function maybeNotifyCoach(rows){
  localStorage.setItem("pamLastAlertNotification",key);
 }
 
-async function renderAthletes(){
- const aa=await sb.from("athletes").select("*").order("display_name");
- view.innerHTML=`<div class="card"><div class="sectionTitle"><h2>Gestione atleti</h2></div>
- <p class="note">Per creare un nuovo account atleta: crea prima l'utente in Supabase Authentication, poi associa qui il relativo UUID.</p>
- <form id="athForm" class="grid two">
-  <label>Nome atleta<input id="athName" required></label>
-  <label>UUID utente Supabase<input id="athUserId" placeholder="opzionale finché non crei il login"></label>
-  <div><button class="primary">Aggiungi atleta</button></div>
- </form></div>
- <div class="card"><div class="tableWrap"><table><thead><tr><th>Atleta</th><th>Login collegato</th><th>Stato</th></tr></thead><tbody>${(aa.data||[]).map(a=>`<tr><td>${a.display_name}</td><td>${a.user_id||"—"}</td><td>${a.active?"Attivo":"Disattivato"}</td></tr>`).join("")}</tbody></table></div></div>`;
- $("#athForm").onsubmit=async e=>{
-   e.preventDefault();
-   const payload={owner_coach_id:currentUser.id,display_name:$("#athName").value.trim(),active:true};
-   if($("#athUserId").value.trim()) payload.user_id=$("#athUserId").value.trim();
-   const {error}=await sb.from("athletes").insert(payload); if(error) return toast(error.message); toast("Atleta aggiunto");await renderAthletes();
- };
+async function athleteLinkedDataCount(athleteId){
+ const tables=[
+  ["wellness","Wellness"],["trainings","Allenamenti"],["test_results","Test"],
+  ["races","Gare"],["injuries","Infortuni"],["anthropometrics","Antropometria"],
+  ["planned_sessions","Programmi"],["attendance","Presenze"]
+ ];
+ const out=[];
+ for(const [table,label] of tables){
+   try{
+     const {count,error}=await sb.from(table).select("*",{count:"exact",head:true}).eq("athlete_id",athleteId);
+     if(!error && Number(count||0)>0)out.push({table,label,count:Number(count||0)});
+   }catch(_){}
+ }
+ return out;
 }
 
+async function renderAthletes(){
+ if(profile.role!=="coach"){
+   view.innerHTML=`<div class="card"><h2>Gestione atleti</h2><div class="note">Solo l’allenatore principale può aggiungere, disattivare o eliminare atleti.</div></div>`;
+   return;
+ }
+
+ const {data:athletes,error:listError}=await sb.from("athletes").select("*").order("active",{ascending:false}).order("display_name");
+ if(listError){view.innerHTML=`<div class="card"><h2>Gestione atleti</h2><div class="note">${listError.message}</div></div>`;return}
+
+ view.innerHTML=`
+ <div class="card">
+   <div class="sectionTitle">
+     <div><h2>👥 Gestione atleti</h2><p class="muted">Aggiungi nuovi atleti e gestisci quelli già presenti senza perdere lo storico.</p></div>
+     <span class="badge redBadge">V4.1.2</span>
+   </div>
+   <div class="note athleteSafetyNote"><b>Protezione dati:</b> “Disattiva” rimuove l’atleta dalle liste operative ma conserva tutti i dati. L’eliminazione definitiva è consentita solo se non esistono dati storici collegati.</div>
+   <form id="athForm" class="grid two">
+     <label>Nome atleta<input id="athName" required placeholder="Nome e cognome"></label>
+     <label>UUID utente Supabase<input id="athUserId" placeholder="Facoltativo: collega il login atleta"></label>
+     <div><button class="primary" id="addAthleteBtn">＋ Aggiungi atleta</button></div>
+   </form>
+ </div>
+
+ <div class="card">
+   <div class="sectionTitle"><div><h2>Atleti</h2><p class="muted">${(athletes||[]).filter(a=>a.active).length} attivi · ${(athletes||[]).filter(a=>!a.active).length} disattivati</p></div></div>
+   <div class="tableWrap">
+     <table>
+       <thead><tr><th>Atleta</th><th>Login</th><th>Stato</th><th>Azioni</th></tr></thead>
+       <tbody>
+       ${(athletes||[]).map(a=>`<tr class="${a.active?"":"athleteInactive"}">
+         <td><b>${a.display_name}</b></td>
+         <td>${a.user_id?"✅ Collegato":"—"}</td>
+         <td><span class="badge ${a.active?"ok":""}">${a.active?"Attivo":"Disattivato"}</span></td>
+         <td><div class="rowActions">
+           <button class="secondary smallBtn" data-toggle-ath="${a.id}" data-active="${a.active}">${a.active?"⏸ Disattiva":"▶ Riattiva"}</button>
+           <button class="dangerBtn smallBtn" data-delete-ath="${a.id}" data-name="${String(a.display_name||"").replace(/"/g,"&quot;")}">🗑 Elimina</button>
+         </div></td>
+       </tr>`).join("")||'<tr><td colspan="4">Nessun atleta presente</td></tr>'}
+       </tbody>
+     </table>
+   </div>
+ </div>`;
+
+ $("#athForm").onsubmit=async e=>{
+   e.preventDefault();
+   const btn=$("#addAthleteBtn");
+   const name=$("#athName").value.trim();
+   const userId=$("#athUserId").value.trim();
+   if(!name)return toast("Inserisci il nome dell’atleta.");
+   btn.disabled=true;btn.textContent="Aggiunta…";
+   const payload={owner_coach_id:currentUser.id,display_name:name,active:true};
+   if(userId)payload.user_id=userId;
+   const {error}=await sb.from("athletes").insert(payload);
+   btn.disabled=false;btn.textContent="＋ Aggiungi atleta";
+   if(error)return toast("Errore aggiunta atleta: "+error.message);
+   toast("Atleta aggiunto");
+   await renderAthletes();
+ };
+
+ document.querySelectorAll("[data-toggle-ath]").forEach(b=>b.onclick=async()=>{
+   const id=b.dataset.toggleAth;
+   const currentlyActive=b.dataset.active==="true";
+   const action=currentlyActive?"disattivare":"riattivare";
+   if(!confirm(`Confermi di ${action} questo atleta?`))return;
+   const {error}=await sb.from("athletes").update({active:!currentlyActive}).eq("id",id).eq("owner_coach_id",currentUser.id);
+   if(error)return toast(error.message);
+   toast(currentlyActive?"Atleta disattivato · storico conservato":"Atleta riattivato");
+   await renderAthletes();
+ });
+
+ document.querySelectorAll("[data-delete-ath]").forEach(b=>b.onclick=async()=>{
+   const id=b.dataset.deleteAth,name=b.dataset.name||"atleta";
+   const linked=await athleteLinkedDataCount(id);
+   if(linked.length){
+     const summary=linked.map(x=>`${x.label}: ${x.count}`).join(" · ");
+     alert(`Non posso eliminare definitivamente ${name} perché possiede dati storici collegati.\n\n${summary}\n\nUsa “Disattiva”: l’atleta sparirà dalle liste operative ma tutti i dati resteranno conservati.`);
+     return;
+   }
+   const typed=prompt(`ELIMINAZIONE DEFINITIVA\n\n${name} non ha dati storici collegati.\nPer confermare scrivi ELIMINA:`);
+   if(typed!=="ELIMINA")return;
+   const {error}=await sb.from("athletes").delete().eq("id",id).eq("owner_coach_id",currentUser.id);
+   if(error)return toast("Eliminazione non riuscita: "+error.message);
+   toast("Atleta eliminato definitivamente");
+   await renderAthletes();
+ });
+}
 
 function mondayOfWeek(base=new Date()){
  const d=new Date(base);d.setHours(12,0,0,0);

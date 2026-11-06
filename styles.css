@@ -390,3 +390,10 @@ body.reorderingBlocks{
   .groupMobileSubnav{display:block}
   .groupNavCard{padding:12px;margin-bottom:10px}
 }
+
+/* V4.1.2 — gestione atleti */
+.athleteInactive{opacity:.62;background:#fafafa}
+.athleteSafetyNote{margin:10px 0 16px}
+@media(max-width:700px){
+  [data-delete-ath],[data-toggle-ath]{width:100%}
+}
