@@ -312,3 +312,7 @@ body.reorderingBlocks{
 
 /* V3.9.7 stabilizzazione */
 .note code{white-space:normal;word-break:break-word}
+
+/* V3.9.8 — assenza robusta */
+.absenceBtn{border:1px solid #b42318;background:#fff4f2;color:#b42318;border-radius:10px;padding:9px 12px;font-weight:800;cursor:pointer}
+.absenceBtn:hover{background:#fde9e6}

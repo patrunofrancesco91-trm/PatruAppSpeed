@@ -1401,10 +1401,9 @@ async function showTrainingDetailsModal(trainings,date,athleteId){
      <div class="trainingDetailText"><span>Tempi / risultati</span><p>${x.times_results||"—"}</p></div>
      <div class="trainingDetailText"><span>Dolore / problemi post</span><p>${x.pain_post||"—"}</p></div>
      <div class="trainingDetailText"><span>Note</span><p>${x.notes||"—"}</p></div>
-     ${canCoachEdit()?`<div class="modalActions trainingManageActions">
-       <button class="editBtn" data-detail-edit="${x.id}">✏️ Modifica seduta</button>
-       <button class="secondary" data-detail-volume="${x.id}">📊 Modifica volume</button>
-       <button class="dangerBtn" data-detail-delete="${x.id}">🗑️ Elimina seduta</button>
+     ${(canCoachEdit()||profile.role==="athlete")?`<div class="modalActions trainingManageActions">
+       ${canCoachEdit()?`<button class="editBtn" data-detail-edit="${x.id}">✏️ Modifica seduta</button><button class="secondary" data-detail-volume="${x.id}">📊 Modifica volume</button><button class="dangerBtn" data-detail-delete="${x.id}">🗑️ Elimina seduta</button>`:""}
+       <button class="absenceBtn" data-detail-absent="${x.id}" data-detail-date="${effectiveTrainingDate(x)}" data-detail-athlete="${x.athlete_id}">❌ Assenza</button>
      </div>`:""}
    </div>`).join("");
 
@@ -1426,6 +1425,13 @@ async function showTrainingDetailsModal(trainings,date,athleteId){
  el.querySelector(".modalClose").onclick=close;
  el.querySelector(".modalCloseBottom").onclick=close;
  el.onclick=e=>{if(e.target===el)close()};
+ el.querySelectorAll("[data-detail-absent]").forEach(b=>b.onclick=async()=>{
+   const athleteId=b.dataset.detailAthlete || (profile.role==="athlete"?athleteProfile.id:null);
+   const date=b.dataset.detailDate;
+   const allA=profile.role==="athlete"?[]:await getAthletes();
+   const a=profile.role==="athlete"?athleteProfile:allA.find(x=>x.id===athleteId);
+   await askAndSetAbsent(athleteId,date,a?.display_name||profile.full_name,async()=>{close();await renderTraining()});
+ });
  if(canCoachEdit()){
    el.querySelectorAll("[data-detail-edit]").forEach(b=>b.onclick=async()=>{
      const id=b.dataset.detailEdit;
@@ -1603,6 +1609,57 @@ function showPlannedTrainingModal(session){
    renderTraining();
  };
 }
+
+async function setAthleteAbsent(athleteId,date,note="",after=null){
+ if(!athleteId||!date)return toast("Atleta o data non validi.");
+
+ const isOwnAthlete=profile?.role==="athlete" && athleteProfile?.id===athleteId;
+ const canSet=["coach","assistant_coach"].includes(profile?.role) || isOwnAthlete;
+ if(!canSet)return toast("Non hai i permessi per registrare questa assenza.");
+
+ try{
+   const payload={
+     athlete_id:athleteId,
+     attendance_date:date,
+     status:"absent",
+     expected_time:null,
+     note:note||null,
+     updated_by:currentUser.id,
+     updated_at:new Date().toISOString()
+   };
+
+   const {error:ae}=await sb.from("attendance").upsert(payload,{onConflict:"athlete_id,attendance_date"});
+   if(ae)throw ae;
+
+   const {error:pe}=await sb.from("planned_sessions")
+     .update({status:"skipped"})
+     .eq("athlete_id",athleteId)
+     .eq("session_date",date)
+     .eq("status","planned");
+
+   if(pe){
+     console.warn("Assenza salvata, programma non marcato skipped:",pe);
+     toast("Assenza registrata. La seduta programmata non è stata aggiornata, ma l’assenza è salvata.");
+   }else{
+     toast("Assenza registrata");
+   }
+
+   if(after)await after();
+   return true;
+ }catch(e){
+   console.error(e);
+   toast("Errore assenza: "+(e.message||String(e)));
+   return false;
+ }
+}
+
+async function askAndSetAbsent(athleteId,date,displayName,after=null){
+ const note=prompt(`Motivo/nota assenza per ${displayName||"atleta"} del ${fmtDate(date)} (opzionale):`,"");
+ if(note===null)return false;
+ if(!confirm(`Segnare ${displayName||"l’atleta"} ASSENTE il ${fmtDate(date)}?`))return false;
+ return await setAthleteAbsent(athleteId,date,note,after);
+}
+
 async function renderTraining(){
  const athleteField=await athleteSelectHTML(), types=await getTrainingTypes();
  const aa=isStaff()?await getAthletes():[athleteProfile];
@@ -1614,7 +1671,7 @@ async function renderTraining(){
    </div>
    <div id="trainingDiary"></div>
  </div>
- <div class="card"><div class="sectionTitle"><div><h2>Registra allenamento</h2><p class="muted">Registra lo svolto oppure segnala rapidamente l’assenza.</p></div>${isStaff()?`<button type="button" class="dangerBtn" id="quickAbsentBtn">❌ Segna assenza</button>`:""}</div><form id="trainingForm">${athleteField}
+ <div class="card"><div class="sectionTitle"><div><h2>Registra allenamento</h2><p class="muted">Registra lo svolto oppure segnala rapidamente l’assenza.</p></div>${(isStaff()||profile.role==="athlete")?`<button type="button" class="dangerBtn" id="quickAbsentBtn">❌ Segna assenza</button>`:""}</div><form id="trainingForm">${athleteField}
  <label>Data allenamento<input type="date" id="trainingDate" value="${localISODate()}" required></label>
  <label>Tipo seduta<select id="trainingType">${types.map(x=>`<option value="${x.id}">${x.name}</option>`).join("")}</select></label>
  <label>Lavoro reale svolto<textarea id="workDone" placeholder="Serie, ripetizioni, distanze, recuperi, carichi..."></textarea></label>
@@ -1747,36 +1804,14 @@ async function renderTraining(){
    sessionStorage.removeItem("programToExecute");
  }
 
- if(isStaff()&&$("#quickAbsentBtn"))$("#quickAbsentBtn").onclick=async()=>{
-   const athleteId=$("#athleteId").value, date=$("#trainingDate").value;
-   const athlete=aa.find(a=>a.id===athleteId);
-   const note=prompt(`Motivo/nota assenza per ${athlete?.display_name||"atleta"} del ${fmtDate(date)} (opzionale):`,"");
-   if(note===null)return;
-   if(!confirm(`Segnare ${athlete?.display_name||"l’atleta"} ASSENTE il ${fmtDate(date)}?`))return;
-   const {error}=await sb.from("attendance").upsert({
-     athlete_id:athleteId,
-     attendance_date:date,
-     status:"absent",
-     expected_time:null,
-     note:note||null,
-     updated_by:currentUser.id,
-     updated_at:new Date().toISOString()
-   },{onConflict:"athlete_id,attendance_date"});
-   if(error)return toast(error.message);
-
-   const {error:skipError}=await sb.from("planned_sessions")
-     .update({status:"skipped"})
-     .eq("athlete_id",athleteId)
-     .eq("session_date",date)
-     .eq("status","planned");
-
-   $("#plannedSessionId").value="";
-   $("#actualBlocks").innerHTML="";
-   await drawDiary();
-   if(skipError){
-     toast("Assenza registrata. Avviso: programma non aggiornato: "+skipError.message);
-   }else{
-     toast("Assenza registrata · sedute programmate del giorno segnate come saltate");
+ if($("#quickAbsentBtn"))$("#quickAbsentBtn").onclick=async()=>{
+   const athleteId=profile.role==="athlete"?athleteProfile.id:$("#athleteId").value;
+   const date=$("#trainingDate").value;
+   const athlete=profile.role==="athlete"?athleteProfile:aa.find(a=>a.id===athleteId);
+   const ok=await askAndSetAbsent(athleteId,date,athlete?.display_name||profile.full_name,drawDiary);
+   if(ok){
+     if($("#plannedSessionId"))$("#plannedSessionId").value="";
+     if($("#actualBlocks"))$("#actualBlocks").innerHTML="";
    }
  };
 
@@ -1891,7 +1926,14 @@ async function renderRecentTraining(){
  let q=sb.from("trainings").select("*,athletes(display_name),training_types(name)").order("training_date",{ascending:false}).limit(10);
  if(profile.role==="athlete") q=q.eq("athlete_id",athleteProfile.id);
  const {data}=await q;
- $("#trainRecent").innerHTML=recentCard("Ultimi allenamenti",(data||[]).map(x=>[fmtDate(effectiveTrainingDate(x)),x.athletes?.display_name||"",x.training_types?.name||"",`${x.duration_min} min · RPE ${x.srpe} · ${x.session_load} AU`,canCoachEdit()?`<div class="rowActions"><button class="editBtn" data-edit-training="${x.id}">✏️ Modifica</button><button class="secondary" data-volume-training="${x.id}">📊 Volume</button><button class="dangerBtn" data-del-training="${x.id}">Elimina</button></div>`:""]));
+ $("#trainRecent").innerHTML=recentCard("Ultimi allenamenti",(data||[]).map(x=>[fmtDate(effectiveTrainingDate(x)),x.athletes?.display_name||"",x.training_types?.name||"",`${x.duration_min} min · RPE ${x.srpe} · ${x.session_load} AU`,(canCoachEdit()||profile.role==="athlete")?`<div class="rowActions">${canCoachEdit()?`<button class="editBtn" data-edit-training="${x.id}">✏️ Modifica</button><button class="secondary" data-volume-training="${x.id}">📊 Volume</button><button class="dangerBtn" data-del-training="${x.id}">Elimina</button>`:""}<button class="absenceBtn" data-absent-training="${x.id}" data-absent-date="${effectiveTrainingDate(x)}" data-absent-athlete="${x.athlete_id}">❌ Assenza</button></div>`:""]));
+ document.querySelectorAll("[data-absent-training]").forEach(b=>b.onclick=async()=>{
+   const athleteId=b.dataset.absentAthlete || (profile.role==="athlete"?athleteProfile.id:null);
+   const date=b.dataset.absentDate;
+   const aa2=profile.role==="athlete"?[]:await getAthletes();
+   const a=profile.role==="athlete"?athleteProfile:aa2.find(x=>x.id===athleteId);
+   await askAndSetAbsent(athleteId,date,a?.display_name||profile.full_name,renderTraining);
+ });
  if(canCoachEdit()){
    document.querySelectorAll("[data-edit-training]").forEach(b=>b.onclick=()=>editTrainingRecord(b.dataset.editTraining,renderRecentTraining));
    document.querySelectorAll("[data-volume-training]").forEach(b=>b.onclick=()=>editTrainingVolume(b.dataset.volumeTraining,renderRecentTraining));
