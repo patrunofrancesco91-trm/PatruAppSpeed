@@ -1,5 +1,5 @@
 
-const APP_BUILD="V3.9.7";
+const APP_BUILD="V4.1";
 const cfg=window.APP_CONFIG||{};
 const sb = (cfg.SUPABASE_URL && !cfg.SUPABASE_URL.startsWith("INSERISCI"))
   ? supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY)
@@ -9,11 +9,43 @@ const $=s=>document.querySelector(s);
 const authView=$("#authView"), appView=$("#appView"), view=$("#view"), tabs=$("#tabs"), headerUser=$("#headerUser");
 let currentUser=null, profile=null, athleteProfile=null, activeTab="home";
 
-const athleteTabs=["home","attendance","program","wellness","training","tests","races","performance","compare","injuries","history","report","notifications"];
-const doctorTabs=["home","attendance","program","performance","compare","history","injuries","report"];
-const coachTabs=["home","attendance","program","athletes","wellness","training","tests","races","performance","compare","injuries","history","report","notifications","settings"];
-const assistantTabs=["home","attendance","program","wellness","training","tests","races","performance","compare","injuries","history","report","notifications"];
-const labels={home:"Dashboard",attendance:"Presenze",program:"Programma",athletes:"Atleti",wellness:"Wellness",training:"Allenamento",tests:"Test",races:"Gare",performance:"Performance",compare:"Confronti",injuries:"Infortuni",history:"Storico",report:"Report",notifications:"Notifiche",settings:"Impostazioni"};
+const athleteTabs=["home","planning","training","athletehub","analysis","notifications"];
+const doctorTabs=["home","planning","athletehub","analysis"];
+const coachTabs=["home","planning","training","athletehub","analysis","notifications","settings"];
+const assistantTabs=["home","planning","training","athletehub","analysis","notifications"];
+const labels={
+ home:"Home",planning:"Programmazione",training:"Allenamento",athletehub:"Atleta",analysis:"Analisi",
+ notifications:"Notifiche",settings:"Impostazioni",
+ attendance:"Presenze",program:"Programma",athletes:"Gestione atleti",wellness:"Wellness",
+ tests:"Test",races:"Gare",performance:"Performance",personal:"Area personale",
+ compare:"Confronti",injuries:"Infortuni",history:"Storico",report:"Report"
+};
+
+const groupedRoutes={
+ planning:["attendance","program"],
+ athletehub:["athletes","personal","wellness","tests","races","injuries"],
+ analysis:["performance","compare","history","report"]
+};
+const groupTitles={
+ planning:{title:"Programmazione",subtitle:"Programma e presenza nello stesso flusso operativo."},
+ athletehub:{title:"Atleta",subtitle:"Profilo, antropometria, Wellness, test, gare e infortuni."},
+ analysis:{title:"Analisi",subtitle:"Performance, confronti, storico e report senza duplicare i dati."}
+};
+function allowedGroupRoutes(group){
+ const role=profile?.role;
+ const raw=groupedRoutes[group]||[];
+ if(group==="athletehub"){
+   if(role==="doctor")return raw.filter(x=>["personal","injuries"].includes(x));
+   if(role==="athlete")return raw.filter(x=>["personal","wellness","tests","races","injuries"].includes(x));
+   if(role==="assistant_coach")return raw.filter(x=>["personal","wellness","tests","races","injuries"].includes(x));
+   return raw;
+ }
+ return raw;
+}
+function parentForRoute(route){
+ for(const g of Object.keys(groupedRoutes))if((groupedRoutes[g]||[]).includes(route))return g;
+ return null;
+}
 
 const DEFAULT_TRAINING_TYPES=["Accelerazioni","Tempo Run","Forza","Lanciati","V Max","Capacità lattacida","Potenza lattacida","Speed Endurance","Special Speed Endurance","Ostacoli / Tecnica ostacoli","Tecnica di corsa","Pliometria","Recupero / Rigenerazione","Gara","Altro"];
 const DEFAULT_TESTS=[
@@ -64,12 +96,87 @@ restore();
 
 function renderTabs(){
  const arr=profile.role==="coach"?coachTabs:(profile.role==="assistant_coach"?assistantTabs:(profile.role==="doctor"?doctorTabs:athleteTabs));
- tabs.innerHTML=arr.map(t=>`<button class="tabBtn ${activeTab===t?"active":""}" data-tab="${t}">${labels[t]}</button>`).join("");
- tabs.querySelectorAll("button").forEach(b=>b.onclick=async()=>{activeTab=b.dataset.tab;renderTabs();await render()});
+ const currentParent=parentForRoute(activeTab)||activeTab;
+ const icon=t=>({home:"🏠",planning:"📅",training:"🏃",athletehub:"👤",analysis:"📊",notifications:"🔔",settings:"⚙️"}[t]||"");
+ tabs.innerHTML=`
+   <div class="mobileNavWrap">
+     <span class="mobileNavLabel">Sezione</span>
+     <select id="mobileTabSelect" class="mobileTabSelect" aria-label="Seleziona sezione">
+       ${arr.map(t=>`<option value="${t}" ${currentParent===t?"selected":""}>${icon(t)} ${labels[t]}</option>`).join("")}
+     </select>
+   </div>
+   <div class="desktopTabs">
+     ${arr.map(t=>`<button class="tabBtn ${currentParent===t?"active":""}" data-tab="${t}">${icon(t)} ${labels[t]}</button>`).join("")}
+   </div>`;
+ tabs.querySelectorAll("button[data-tab]").forEach(b=>b.onclick=async()=>{
+   activeTab=b.dataset.tab;
+   renderTabs();
+   await render();
+ });
+ const mobile=$("#mobileTabSelect");
+ if(mobile)mobile.onchange=async()=>{
+   activeTab=mobile.value;
+   renderTabs();
+   await render();
+ };
 }
-async function render(){
- const fn={home:renderHome,attendance:renderAttendance,program:renderProgram,athletes:renderAthletes,wellness:renderWellness,training:renderTraining,tests:renderTests,races:renderRaces,performance:renderPerformance,compare:renderCompare,injuries:renderInjuries,history:renderHistory,report:renderReport,notifications:renderNotifications,settings:renderSettings}[activeTab];
+
+const childRenderers={
+ attendance:renderAttendance,program:renderProgram,athletes:renderAthletes,wellness:renderWellness,
+ tests:renderTests,races:renderRaces,performance:renderPerformance,personal:renderPersonalArea,
+ compare:renderCompare,injuries:renderInjuries,history:renderHistory,report:renderReport
+};
+
+async function renderGroupedArea(group,requestedChild=null){
+ const items=allowedGroupRoutes(group);
+ if(!items.length){view.innerHTML=`<div class="card"><h2>${labels[group]}</h2><p class="muted">Nessuna sezione disponibile.</p></div>`;return}
+ let child=requestedChild||sessionStorage.getItem(`group_${group}`)||items[0];
+ if(!items.includes(child))child=items[0];
+ sessionStorage.setItem(`group_${group}`,child);
+
+ const fn=childRenderers[child];
+ if(!fn){view.innerHTML=`<div class="card"><h2>Sezione non disponibile</h2></div>`;return}
  await fn();
+
+ const meta=groupTitles[group];
+ const nav=document.createElement("div");
+ nav.className="groupNavCard card";
+ nav.innerHTML=`<div class="groupNavHead"><div><span class="eyebrow">PATRUNO SPEED TEAM · ${APP_BUILD}</span><h2>${meta.title}</h2><p class="muted">${meta.subtitle}</p></div></div>
+ <div class="groupSubnav">
+   ${items.map(x=>`<button class="groupSubBtn ${x===child?"active":""}" data-group-child="${x}">${labels[x]}</button>`).join("")}
+ </div>
+ <div class="groupMobileSubnav">
+   <label>Sottosezione<select id="groupChildSelect">${items.map(x=>`<option value="${x}" ${x===child?"selected":""}>${labels[x]}</option>`).join("")}</select></label>
+ </div>`;
+ view.prepend(nav);
+
+ nav.querySelectorAll("[data-group-child]").forEach(b=>b.onclick=async()=>{
+   sessionStorage.setItem(`group_${group}`,b.dataset.groupChild);
+   await renderGroupedArea(group,b.dataset.groupChild);
+ });
+ const sel=nav.querySelector("#groupChildSelect");
+ if(sel)sel.onchange=async()=>{
+   sessionStorage.setItem(`group_${group}`,sel.value);
+   await renderGroupedArea(group,sel.value);
+ };
+}
+
+async function render(){
+ const parent=parentForRoute(activeTab);
+ if(parent){
+   const requested=activeTab;
+   activeTab=parent;
+   renderTabs();
+   await renderGroupedArea(parent,requested);
+   return;
+ }
+ if(["planning","athletehub","analysis"].includes(activeTab)){
+   await renderGroupedArea(activeTab);
+   return;
+ }
+ const fn={home:renderHome,training:renderTraining,notifications:renderNotifications,settings:renderSettings}[activeTab];
+ if(fn){await fn();return}
+ activeTab="home";renderTabs();await renderHome();
 }
 const stat=(l,v)=>`<div class="stat"><span>${l}</span><b>${v}</b></div>`;
 const avg=a=>a.length?a.reduce((s,x)=>s+Number(x||0),0)/a.length:0;
@@ -326,8 +433,14 @@ function urlBase64ToUint8Array(base64String){
 }
 async function getBrowserPushSubscription(){
  if(!("serviceWorker" in navigator) || !("PushManager" in window))return null;
- const reg=await navigator.serviceWorker.ready;
- return await reg.pushManager.getSubscription();
+ const timeout=new Promise(resolve=>setTimeout(()=>resolve(null),1500));
+ const ready=(async()=>{
+   try{
+     const reg=await navigator.serviceWorker.ready;
+     return await reg.pushManager.getSubscription();
+   }catch(_){return null}
+ })();
+ return await Promise.race([ready,timeout]);
 }
 async function enableNotifications(){
  if(typeof window.Notification==="undefined"||!("serviceWorker" in navigator)||!("PushManager" in window)){
@@ -402,6 +515,7 @@ async function notifyAthletesOfProgram(athleteIds,date,title,action="updated"){
 }
 async function renderNotifications(){
  try{
+ view.innerHTML=`<div class="card"><h2>🔔 Notifiche</h2><p class="muted">Caricamento centro notifiche…</p></div>`;
  const hasNotificationApi=typeof window.Notification!=="undefined";
  const canPush=hasNotificationApi&&("serviceWorker" in navigator)&&("PushManager" in window);
  let sub=null; try{sub=canPush?await getBrowserPushSubscription():null}catch(_){}
@@ -2062,16 +2176,135 @@ function isoDateToday(){return new Date().toISOString().slice(0,10)}
 function daysAgo(n){const d=new Date();d.setDate(d.getDate()-n);return d}
 function parseDateLocal(x){return x?new Date(String(x).length===10?x+"T12:00:00":x):null}
 
+
+function racePbHigherBetter(unit){
+ const u=String(unit||"").trim().toLowerCase();
+ return ["m","cm","mm","kg","pt","pts","punti","points"].includes(u);
+}
+function fmtAnthro(v,unit="cm"){
+ const n=Number(v); if(!Number.isFinite(n))return "—";
+ return `${Number.isInteger(n)?n:n.toFixed(1)} ${unit}`;
+}
+async function editAnthropometricRecord(id,athleteId,after){
+ const {data:x,error}=await sb.from("anthropometrics").select("*").eq("id",id).single();
+ if(error)return toast(error.message);
+ const fields=[
+  {key:"measurement_date",label:"Data rilevazione",type:"date",value:x.measurement_date},
+  {key:"height_cm",label:"Altezza (cm)",type:"number",step:"0.1",value:x.height_cm??""},
+  {key:"weight_kg",label:"Peso (kg)",type:"number",step:"0.1",value:x.weight_kg??""},
+  {key:"leg_length_cm",label:"Lunghezza gamba (cm)",type:"number",step:"0.1",value:x.leg_length_cm??""},
+  {key:"leg_length_myjump_cm",label:"Lunghezza gamba My Jump (cm)",type:"number",step:"0.1",value:x.leg_length_myjump_cm??""},
+  {key:"leg_length_90_cm",label:"Lunghezza gamba 90° (cm)",type:"number",step:"0.1",value:x.leg_length_90_cm??""},
+  {key:"lever_cm",label:"Leva (cm)",type:"number",step:"0.1",value:x.lever_cm??""},
+  {key:"notes",label:"Note",type:"textarea",value:x.notes??""}
+ ];
+ openEditModal("Modifica rilevazione antropometrica",fields,async v=>{
+  const num=k=>v[k]===""?null:Number(v[k]);
+  const {error:e}=await sb.from("anthropometrics").update({
+   measurement_date:v.measurement_date,height_cm:num("height_cm"),weight_kg:num("weight_kg"),
+   leg_length_cm:num("leg_length_cm"),leg_length_myjump_cm:num("leg_length_myjump_cm"),
+   leg_length_90_cm:num("leg_length_90_cm"),lever_cm:num("lever_cm"),notes:v.notes||null,
+   updated_at:new Date().toISOString()
+  }).eq("id",id).eq("athlete_id",athleteId);
+  if(e)return toast(e.message);toast("Rilevazione aggiornata");await after();
+ });
+}
+function canEditCoachBirth(){return ["coach","assistant_coach"].includes(profile?.role)}
+
+async function renderPersonalArea(){
+ const aa=isStaff()?await getAthletes():[athleteProfile];
+ const initial=sessionStorage.getItem("personalAthlete")||aa[0]?.id;
+ view.innerHTML=`<div class="card">
+  <div class="sectionTitle"><div><h2>👤 Area personale</h2><p class="muted">Dati anagrafici e antropometrici. PB e infortuni sono riepiloghi automatici delle sezioni originali, senza doppio inserimento.</p></div><span class="badge redBadge">V4.1</span></div>
+  ${isStaff()?`<label>Atleta<select id="personalAth">${aa.map(a=>`<option value="${a.id}" ${a.id===initial?"selected":""}>${a.display_name}</option>`).join("")}</select></label>`:""}
+  <div id="personalBody"></div>
+ </div>`;
+ const athleteId=()=>isStaff()?$("#personalAth").value:athleteProfile.id;
+ async function draw(){
+  const id=athleteId();
+  let athlete=aa.find(a=>a.id===id)||athleteProfile;
+  const [{data:athFresh},{data:anth,error:anthErr},{data:races,error:raceErr},{data:inj,error:injErr}]=await Promise.all([
+   sb.from("athletes").select("*").eq("id",id).maybeSingle(),
+   sb.from("anthropometrics").select("*").eq("athlete_id",id).order("measurement_date",{ascending:false}),
+   sb.from("races").select("*,race_types(name,unit)").eq("athlete_id",id).order("race_date",{ascending:true}),
+   sb.from("injuries").select("*").eq("athlete_id",id).order("start_date",{ascending:false})
+  ]);
+  athlete=athFresh||athlete;
+  if(anthErr){$("#personalBody").innerHTML=`<div class="note">${anthErr.message}<br><b>Esegui V4_0_AREA_PERSONALE.sql in Supabase.</b></div>`;return}
+  const list=anth||[],latest=list[0]||null;
+  const groups={};(races||[]).forEach(r=>{const n=r.race_types?.name||"Gara";(groups[n]??=[]).push(r)});
+  const pbs=Object.entries(groups).map(([name,rows])=>{
+   const vals=rows.map(r=>Number(r.result)).filter(Number.isFinite),unit=rows[0]?.race_types?.unit||"";
+   if(!vals.length)return null;
+   const higher=racePbHigherBetter(unit),pb=higher?Math.max(...vals):Math.min(...vals);
+   const bestRow=rows.find(r=>Number(r.result)===pb);
+   return {name,pb,unit,date:bestRow?.race_date,meeting:bestRow?.meeting||""};
+  }).filter(Boolean);
+  const activeInj=(inj||[]).filter(x=>x.status!=="resolved");
+  const canEdit=canCoachEdit();
+  const birthCard=`<div class="card innerCard personalIdentity">
+    <div class="sectionTitle"><div><h3>Dati personali</h3><p class="muted">Dato anagrafico dell’atleta.</p></div>${canEditCoachBirth()?`<button class="secondary smallBtn" id="editBirthDate">✏️ Modifica</button>`:""}</div>
+    <div class="stats"><div class="stat"><span>Data di nascita</span><b>${athlete?.birth_date?fmtDate(athlete.birth_date):"—"}</b></div></div>
+  </div>`;
+  const latestStats=latest?`<div class="stats personalAnthroStats">
+   ${stat("Altezza",fmtAnthro(latest.height_cm))}${stat("Peso",fmtAnthro(latest.weight_kg,"kg"))}${stat("Gamba",fmtAnthro(latest.leg_length_cm))}
+   ${stat("Gamba My Jump",fmtAnthro(latest.leg_length_myjump_cm))}${stat("Gamba 90°",fmtAnthro(latest.leg_length_90_cm))}${stat("Leva",fmtAnthro(latest.lever_cm))}
+  </div><p class="muted personalLastDate">Ultima rilevazione: <b>${fmtDate(latest.measurement_date)}</b></p>`:`<div class="note">Nessuna rilevazione antropometrica.</div>`;
+  const form=canEdit?`<div class="card innerCard"><h3>Nuova rilevazione antropometrica</h3><form id="anthroForm">
+   <div class="grid three"><label>Data rilevazione<input type="date" id="anDate" value="${isoDateToday()}" required></label><label>Altezza (cm)<input type="number" id="anHeight" step="0.1" min="1"></label><label>Peso (kg)<input type="number" id="anWeight" step="0.1" min="1"></label></div>
+   <div class="grid three"><label>Lunghezza gamba (cm)<input type="number" id="anLeg" step="0.1" min="1"></label><label>Lunghezza gamba My Jump (cm)<input type="number" id="anMyJump" step="0.1" min="1"></label><label>Lunghezza gamba 90° (cm)<input type="number" id="anLeg90" step="0.1" min="1"></label></div>
+   <div class="grid two"><label>Leva (cm)<input type="number" id="anLever" step="0.1" min="1"></label><label>Note<input id="anNotes" placeholder="Opzionale"></label></div>
+   <button class="primary">Salva rilevazione</button>
+  </form></div>`:"";
+  $("#personalBody").innerHTML=`
+   <div class="personalHeader"><h3>${athlete?.display_name||"Atleta"}</h3>${birthCard}${latestStats}</div>
+   ${form}
+   <div class="card innerCard"><div class="sectionTitle"><div><h3>Storico antropometrico</h3><p class="muted">Ogni rilevazione mantiene la propria data e non sovrascrive lo storico.</p></div></div>
+    <div class="tableWrap historyGrid"><table><thead><tr><th>Data</th><th>Altezza</th><th>Peso</th><th>Gamba</th><th>My Jump</th><th>90°</th><th>Leva</th><th>Note</th>${canEdit?"<th>Azioni</th>":""}</tr></thead><tbody>
+    ${list.map(x=>`<tr><td><b>${fmtDate(x.measurement_date)}</b></td><td>${fmtAnthro(x.height_cm)}</td><td>${fmtAnthro(x.weight_kg,"kg")}</td><td>${fmtAnthro(x.leg_length_cm)}</td><td>${fmtAnthro(x.leg_length_myjump_cm)}</td><td>${fmtAnthro(x.leg_length_90_cm)}</td><td>${fmtAnthro(x.lever_cm)}</td><td>${x.notes||"—"}</td>${canEdit?`<td><div class="rowActions"><button class="editBtn" data-edit-anth="${x.id}">✏️ Modifica</button><button class="dangerBtn" data-del-anth="${x.id}">🗑️</button></div></td>`:""}</tr>`).join("")||`<tr><td colspan="${canEdit?9:8}">Nessuna rilevazione</td></tr>`}
+    </tbody></table></div>
+   </div>
+   <div class="grid two personalAutoGrid">
+    <div class="card innerCard"><div class="sectionTitle"><div><h3>🏁 Personal Best</h3><p class="muted">Calcolati automaticamente dalle gare inserite.</p></div></div>
+     <div class="pbGrid">${pbs.map(x=>`<div class="pbCard"><span>${x.name}</span><b>${x.pb} ${x.unit}</b><small>${x.date?fmtDate(x.date):""}${x.meeting?` · ${x.meeting}`:""}</small></div>`).join("")||'<div class="note">Nessuna gara registrata.</div>'}</div>
+    </div>
+    <div class="card innerCard"><div class="sectionTitle"><div><h3>🩺 Infortuni</h3><p class="muted">Dati letti automaticamente dall’area Infortuni.</p></div><span class="badge ${activeInj.length?"danger":"ok"}">${activeInj.length?`${activeInj.length} aperti`:"Nessuno attivo"}</span></div>
+     <div class="personalInjuries">${(inj||[]).slice(0,5).map(x=>`<div class="injuryMini"><div><b>${x.site}</b> · ${x.issue_type}</div><span class="badge ${x.status==="resolved"?"ok":x.status==="active"?"danger":""}">${x.status}</span><small>${fmtDate(x.start_date)}${x.return_date?` → ${fmtDate(x.return_date)}`:""}</small></div>`).join("")||'<div class="note">Nessuna problematica registrata.</div>'}</div>
+    </div>
+   </div>`;
+  if($("#editBirthDate"))$("#editBirthDate").onclick=()=>{
+   openEditModal("Modifica data di nascita",[
+    {key:"birth_date",label:"Data di nascita",type:"date",value:athlete?.birth_date||""}
+   ],async v=>{
+    const {error}=await sb.from("athletes").update({birth_date:v.birth_date||null}).eq("id",id);
+    if(error){toast(error.message);return false}
+    toast("Data di nascita aggiornata");
+    await draw();
+   });
+  };
+  if(canEdit){
+   $("#anthroForm").onsubmit=async e=>{
+    e.preventDefault();const num=id=>$(id).value===""?null:Number($(id).value);
+    const payload={athlete_id:id,measurement_date:$("#anDate").value,height_cm:num("#anHeight"),weight_kg:num("#anWeight"),leg_length_cm:num("#anLeg"),leg_length_myjump_cm:num("#anMyJump"),leg_length_90_cm:num("#anLeg90"),lever_cm:num("#anLever"),notes:$("#anNotes").value||null,created_by:currentUser.id,updated_at:new Date().toISOString()};
+    const {error}=await sb.from("anthropometrics").insert(payload);if(error)return toast(error.message);toast("Rilevazione salvata");await draw();
+   };
+   document.querySelectorAll("[data-edit-anth]").forEach(b=>b.onclick=()=>editAnthropometricRecord(b.dataset.editAnth,id,draw));
+   document.querySelectorAll("[data-del-anth]").forEach(b=>b.onclick=async()=>{if(!confirm("Eliminare questa rilevazione antropometrica?"))return;const {error}=await sb.from("anthropometrics").delete().eq("id",b.dataset.delAnth).eq("athlete_id",id);if(error)return toast(error.message);toast("Rilevazione eliminata");await draw()});
+  }
+ }
+ if(isStaff())$("#personalAth").onchange=async()=>{sessionStorage.setItem("personalAthlete",$("#personalAth").value);await draw()};
+ await draw();
+}
+
 async function renderPerformance(){
  const aa=isStaff()?await getAthletes():[athleteProfile];
  const initial=sessionStorage.getItem("perfAthlete")||aa[0]?.id;
  view.innerHTML=`<div class="card">
-  <div class="sectionTitle"><div><h2>Performance</h2><p class="muted">Volume specifico aggiornato automaticamente dagli allenamenti effettivamente svolti.</p></div><span class="badge redBadge">V3.6 AUTO</span></div>
+  <div class="sectionTitle"><div><h2>Performance</h2><p class="muted">Analisi di volume corsa e forza. Test e gare restano nella sezione Atleta per evitare doppioni.</p></div><span class="badge redBadge">AUTO</span></div>
   ${isStaff()?`<label>Atleta<select id="perfAth">${aa.map(a=>`<option value="${a.id}" ${a.id===initial?"selected":""}>${a.display_name}</option>`).join("")}</select></label>`:""}
   <div class="segmented" id="perfSections">
     <button class="perfSec active" data-sec="sprint">Volumi corsa</button>
     <button class="perfSec" data-sec="strength">Forza</button>
-    <button class="perfSec" data-sec="profile">Profilo test</button>
   </div>
   <div id="perfBody"></div>
  </div>`;
@@ -2080,7 +2313,6 @@ async function renderPerformance(){
  async function draw(){
    if(sec==="sprint") await drawSprintPerformance(athleteId());
    if(sec==="strength") await drawStrengthPerformance(athleteId());
-   if(sec==="profile") await drawTestProfile(athleteId());
  }
  if(isStaff()) $("#perfAth").onchange=async()=>{sessionStorage.setItem("perfAthlete",$("#perfAth").value);await draw()};
  document.querySelectorAll(".perfSec").forEach(b=>b.onclick=async()=>{

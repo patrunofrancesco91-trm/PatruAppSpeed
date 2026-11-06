@@ -13,7 +13,7 @@ body{margin:0;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Sego
 main{max-width:1180px;margin:0 auto;padding:14px}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:var(--shadow)}
 .authWrap{min-height:70vh;display:grid;place-items:center}.authCard{width:min(440px,100%)}
-.tabs{position:sticky;top:78px;z-index:15;display:flex;gap:8px;overflow:auto;background:var(--bg);padding:10px 0}
+.tabs{position:sticky;top:78px;z-index:15;background:var(--bg);padding:10px 0}.desktopTabs{display:flex;gap:8px;overflow:auto}.mobileNavWrap{display:none}
 button{border:0;border-radius:12px;padding:11px 14px;font-weight:700;cursor:pointer;font:inherit}
 button.primary{background:var(--primary);color:#fff}button.secondary{background:#e8eef7;color:var(--primary)}button.danger{background:#b42318;color:#fff}
 button.full{width:100%}.tabBtn.active{background:var(--primary);color:#fff}.tabBtn{background:#e8eef7;color:var(--primary);white-space:nowrap}
@@ -331,4 +331,62 @@ body.reorderingBlocks{
   color:#fff !important;
   border-color:#b42318 !important;
   box-shadow:0 0 0 2px rgba(180,35,24,.15);
+}
+/* V4.0 — Area personale */
+.personalHeader{margin-top:14px}
+.personalAnthroStats{grid-template-columns:repeat(3,minmax(0,1fr));margin-top:10px}
+.personalLastDate{margin:8px 0 18px}
+.personalAutoGrid{align-items:start}
+.pbGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.pbCard{border:1px solid var(--line,#e5e7eb);border-radius:14px;padding:12px;background:#fff}
+.pbCard span{display:block;font-size:12px;color:#666;margin-bottom:5px}
+.pbCard b{display:block;font-size:20px;color:#8e1111}
+.pbCard small{display:block;margin-top:5px;color:#777}
+.personalInjuries{display:grid;gap:9px}
+.injuryMini{border:1px solid var(--line,#e5e7eb);border-radius:12px;padding:10px;display:grid;grid-template-columns:1fr auto;gap:4px 8px;align-items:center}
+.injuryMini small{grid-column:1/-1;color:#777}
+@media(max-width:700px){.personalAnthroStats{grid-template-columns:repeat(2,minmax(0,1fr))}.personalAutoGrid{grid-template-columns:1fr!important}}
+
+/* V4.0.1 — navigazione mobile robusta */
+.mobileNavLabel{display:block;font-size:.72rem;font-weight:900;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px}
+.mobileTabSelect{margin:0;width:100%;background:#fff;border:2px solid var(--primary);color:var(--text);font-weight:800;padding:12px 42px 12px 12px;border-radius:12px}
+@media(max-width:760px){
+  .tabs{top:70px;padding:8px 0;overflow:visible}
+  .desktopTabs{display:none}
+  .mobileNavWrap{display:block}
+}
+
+/* V4.0.2 */
+.personalIdentity{margin:10px 0 14px}
+
+/* V4.1 — navigazione consolidata */
+.groupNavCard{
+  padding:14px 16px;
+  margin-bottom:14px;
+  border-left:5px solid var(--primary);
+}
+.groupNavHead h2{margin:2px 0 3px}
+.groupNavHead p{margin:0}
+.groupSubnav{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.groupSubBtn{
+  border:1px solid #dedee3;
+  background:#fff;
+  color:#252525;
+  border-radius:999px;
+  padding:9px 13px;
+  font-weight:800;
+  cursor:pointer;
+}
+.groupSubBtn.active{
+  background:var(--primary);
+  color:#fff;
+  border-color:var(--primary);
+}
+.groupMobileSubnav{display:none;margin-top:10px}
+.groupMobileSubnav label{margin:0;font-weight:800}
+.groupMobileSubnav select{margin-top:5px}
+@media(max-width:760px){
+  .groupSubnav{display:none}
+  .groupMobileSubnav{display:block}
+  .groupNavCard{padding:12px;margin-bottom:10px}
 }
