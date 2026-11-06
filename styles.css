@@ -316,3 +316,19 @@ body.reorderingBlocks{
 /* V3.9.8 — assenza robusta */
 .absenceBtn{border:1px solid #b42318;background:#fff4f2;color:#b42318;border-radius:10px;padding:9px 12px;font-weight:800;cursor:pointer}
 .absenceBtn:hover{background:#fde9e6}
+
+/* V3.9.9 — assenza immediatamente visibile */
+.diaryDay.absentDay{
+  background:#fff0f0 !important;
+  border:2px solid #b42318 !important;
+  box-shadow:0 0 0 2px rgba(180,35,24,.08);
+}
+.diaryDay.absentDay .diaryDayNum{color:#b42318;font-weight:900}
+.absenceState{color:#b42318}
+.absenceState b{font-size:14px;letter-spacing:.03em}
+.trainingTabAbsent{
+  background:#b42318 !important;
+  color:#fff !important;
+  border-color:#b42318 !important;
+  box-shadow:0 0 0 2px rgba(180,35,24,.15);
+}

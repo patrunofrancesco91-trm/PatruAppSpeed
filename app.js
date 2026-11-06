@@ -1644,6 +1644,7 @@ async function setAthleteAbsent(athleteId,date,note="",after=null){
      toast("Assenza registrata");
    }
 
+   setTrainingTabAbsenceState(true);
    if(after)await after();
    return true;
  }catch(e){
@@ -1658,6 +1659,15 @@ async function askAndSetAbsent(athleteId,date,displayName,after=null){
  if(note===null)return false;
  if(!confirm(`Segnare ${displayName||"l’atleta"} ASSENTE il ${fmtDate(date)}?`))return false;
  return await setAthleteAbsent(athleteId,date,note,after);
+}
+
+
+function setTrainingTabAbsenceState(isAbsent){
+ const tab=document.querySelector('[data-tab="training"]');
+ if(!tab)return;
+ tab.classList.toggle("trainingTabAbsent",!!isAbsent);
+ if(isAbsent)tab.setAttribute("title","Atleta assente nella data selezionata");
+ else tab.removeAttribute("title");
 }
 
 async function renderTraining(){
@@ -1716,6 +1726,8 @@ async function renderTraining(){
    const byPlan={};(p||[]).forEach(x=>(byPlan[x.session_date]??=[]).push(x));
    const completedPlanIds=new Set((t||[]).map(x=>x.planned_session_id).filter(Boolean));
    const byAtt=new Map((a||[]).map(x=>[x.attendance_date,x]));
+   const selectedTrainingDate=$("#trainingDate")?.value||localISODate();
+   setTrainingTabAbsenceState(byAtt.get(selectedTrainingDate)?.status==="absent");
    const offset=(first.getDay()+6)%7; // Monday=0
    const total=Math.ceil((offset+last.getDate())/7)*7;
    const cells=[];
@@ -1727,6 +1739,9 @@ async function renderTraining(){
        cls="hasTraining";
        body=tr.map(x=>`<div class="diaryTrainingChip actualChip"><b>✅ ${x.training_types?.name||"Allenamento svolto"}</b><small>${x.duration_min}′ · RPE ${x.srpe} · TL ${x.session_load} AU</small></div>`).join("");
        if(pl.length) body+=pl.map(x=>`<div class="diaryTrainingChip plannedChip" data-plan-id="${x.id}"><b>📋 ${x.title||x.training_types?.name||"Seduta programmata"}</b><small>Programmato</small></div>`).join("");
+     }else if(att?.status==="absent"){
+       cls="absentDay";
+       body=`<div class="diaryState absenceState"><b>❌ ASSENTE</b>${att.note?`<small>${att.note}</small>`:""}${pl.length?`<small>Seduta programmata non svolta</small>`:""}</div>`;
      }else if(pl.length){
        cls="hasPlannedTraining";
        body=pl.map(x=>`<div class="diaryTrainingChip plannedChip" data-plan-id="${x.id}"><b>📋 ${x.title||x.training_types?.name||"Seduta programmata"}</b><small>${blocksSummaryHTML(x.planned_blocks||[],false)}</small></div>`).join("");
@@ -1735,7 +1750,7 @@ async function renderTraining(){
      }else if(att?.status==="maybe"){
        cls="plannedMaybe"; body=`<div class="diaryState">❓ Da confermare${att.expected_time?` · ${String(att.expected_time).slice(0,5)}`:""}</div>`;
      }else{
-       if(att?.status==="absent"){cls="absentDay";body=`<div class="diaryState">❌ Assente${att.note?`<small>${att.note}</small>`:""}</div>`;}else{cls="restDay"; body=`<div class="diaryState">○ Riposo / nessuna seduta</div>`;}
+       cls="restDay"; body=`<div class="diaryState">○ Riposo / nessuna seduta</div>`;
      }
      cells.push(`<button class="diaryDay ${inMonth?"":"outsideMonth"} ${cls}" data-diary-date="${iso}" ${inMonth?"":"tabindex=-1"}>
        <span class="diaryDayNum">${d.getDate()}</span>${body}
@@ -1757,6 +1772,7 @@ async function renderTraining(){
        return;
      }
      $("#trainingDate").value=date;
+     setTrainingTabAbsenceState(byAtt.get(date)?.status==="absent");
      if(isStaff()&&$("#athleteId"))$("#athleteId").value=id;
      $("#trainingForm").scrollIntoView({behavior:"smooth",block:"start"});
    });
@@ -1777,6 +1793,7 @@ async function renderTraining(){
    if($("#diaryAth"))$("#diaryAth").value=$("#athleteId").value;
    await drawDiary();
  };
+ if($("#trainingDate"))$("#trainingDate").onchange=async()=>{await drawDiary();};
 
 
  addBlockRow("actualBlocks","actual",{block_kind:"run",quality:"Accelerazione",sets:1,planned_reps:1,completed_reps:1});
