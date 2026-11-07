@@ -1,5 +1,5 @@
 
-const APP_BUILD="V4.1.4";
+const APP_BUILD="V4.1.5";
 const cfg=window.APP_CONFIG||{};
 const sb = (cfg.SUPABASE_URL && !cfg.SUPABASE_URL.startsWith("INSERISCI"))
   ? supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY)
