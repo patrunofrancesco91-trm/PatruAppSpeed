@@ -1,5 +1,5 @@
 
-const APP_BUILD="V4.1.5";
+const APP_BUILD="V4.1.6";
 const cfg=window.APP_CONFIG||{};
 const sb = (cfg.SUPABASE_URL && !cfg.SUPABASE_URL.startsWith("INSERISCI"))
   ? supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY)
@@ -447,34 +447,47 @@ function subscriptionUsesCurrentVapid(sub){
  }catch(_){return false}
 }
 
-async function getBrowserPushSubscription(){
- if(!("serviceWorker" in navigator) || !("PushManager" in window))return null;
- const timeout=new Promise(resolve=>setTimeout(()=>resolve(null),1500));
+
+async function getServiceWorkerRegistrationSafe(timeoutMs=3000){
+ if(!("serviceWorker" in navigator))return null;
+ const timeout=new Promise(resolve=>setTimeout(()=>resolve(null),timeoutMs));
  const ready=(async()=>{
-   try{
-     const reg=await navigator.serviceWorker.ready;
-     return await reg.pushManager.getSubscription();
-   }catch(_){return null}
+   try{return await navigator.serviceWorker.ready}catch(_){return null}
  })();
  return await Promise.race([ready,timeout]);
 }
+
+async function getBrowserPushSubscription(){
+ if(!("serviceWorker" in navigator) || !("PushManager" in window))return null;
+ const reg=await getServiceWorkerRegistrationSafe(2500);
+ if(!reg)return null;
+ try{return await reg.pushManager.getSubscription()}catch(_){return null}
+}
 async function enableNotifications(){
- if(typeof window.Notification==="undefined"||!("serviceWorker" in navigator)||!("PushManager" in window)){
-   toast("Push non supportate da questo browser/dispositivo.");return false;
- }
- if(!cfg.PUSH_VAPID_PUBLIC_KEY){
-   toast("Chiave push pubblica non configurata.");return false;
- }
-
- const permission=await window.Notification.requestPermission();
- localStorage.setItem("pamNotifications",permission);
- if(permission!=="granted"){
-   toast("Notifiche non autorizzate");return false;
- }
-
+ const btn=$("#pushEnable");
  try{
-   const reg=await navigator.serviceWorker.ready;
-   let sub=await reg.pushManager.getSubscription();
+   if(btn){btn.disabled=true;btn.textContent="Attivazione…";}
+   if(typeof window.Notification==="undefined"||!("serviceWorker" in navigator)||!("PushManager" in window)){
+     toast("Push non supportate da questo browser/dispositivo.");return false;
+   }
+   if(!cfg.PUSH_VAPID_PUBLIC_KEY){
+     toast("Chiave push pubblica non configurata.");return false;
+   }
+
+   const permission=await window.Notification.requestPermission();
+   localStorage.setItem("pamNotifications",permission);
+   if(permission!=="granted"){
+     toast("Notifiche non autorizzate");return false;
+   }
+
+   const reg=await getServiceWorkerRegistrationSafe(4000);
+   if(!reg){
+     toast("Service Worker non pronto. Chiudi e riapri l’app dalla schermata Home.");
+     return false;
+   }
+
+   let sub=null;
+   try{sub=await reg.pushManager.getSubscription()}catch(_){}
 
    if(sub && !subscriptionUsesCurrentVapid(sub)){
      const oldEndpoint=sub.endpoint;
@@ -489,6 +502,7 @@ async function enableNotifications(){
    }
 
    if(!sub){
+     toast("Creo la registrazione push…");
      sub=await reg.pushManager.subscribe({
        userVisibleOnly:true,
        applicationServerKey:urlBase64ToUint8Array(cfg.PUSH_VAPID_PUBLIC_KEY)
@@ -508,12 +522,15 @@ async function enableNotifications(){
 
    if(error)throw error;
 
+   localStorage.setItem("pstPushVapidKey",cfg.PUSH_VAPID_PUBLIC_KEY);
    toast("🔔 Push attivate su questo dispositivo");
    return true;
  }catch(e){
    console.error("enableNotifications",e);
    toast("Errore attivazione push: "+(e?.message||String(e)));
    return false;
+ }finally{
+   if(btn){btn.disabled=false;btn.textContent="🔔 Attiva push";}
  }
 }
 async function disableNotifications(){
@@ -557,7 +574,8 @@ async function renderNotifications(){
  let sub=null;
  try{
    sub=canPush?await getBrowserPushSubscription():null;
-   if(sub && !subscriptionUsesCurrentVapid(sub))sub=null;
+   const storedKey=localStorage.getItem("pstPushVapidKey");
+   if(sub && storedKey && storedKey!==cfg.PUSH_VAPID_PUBLIC_KEY)sub=null;
  }catch(_){}
  let {data:pref,error:prefErr}=await sb.from("notification_preferences").select("*").eq("user_id",currentUser.id).maybeSingle();
  if(prefErr && !String(prefErr.message||"").includes("0 rows")){

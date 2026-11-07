@@ -1,4 +1,4 @@
-const CACHE="pst-v415-push-cache-fix";
+const CACHE="pst-v416-push-button-fix";
 const STATIC=["./manifest.json","./assets/logo.png","./assets/hero.jpg","./assets/icon-192.png","./assets/icon-512.png","./assets/favicon.png"];
 const CORE=["./","./index.html","./styles.css","./app.js","./config.js"];
 
