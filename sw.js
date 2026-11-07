@@ -1,5 +1,5 @@
-const CACHE="pst-v416-push-button-fix";
-const STATIC=["./manifest.json","./assets/logo.png","./assets/hero.jpg","./assets/icon-192.png","./assets/icon-512.png","./assets/favicon.png"];
+const CACHE="pst-v417-sw-path-fix";
+const STATIC=["./manifest.json","./logo.png","./hero.jpg","./icon-192.png","./icon-512.png","./favicon.png"];
 const CORE=["./","./index.html","./styles.css","./app.js","./config.js"];
 
 self.addEventListener("install",event=>{
@@ -47,7 +47,7 @@ self.addEventListener("fetch",event=>{
 self.addEventListener("push",event=>{
  let data={title:"Patruno Speed Team",body:"Hai una nuova notifica.",url:"./",kind:"general"};
  try{if(event.data)data={...data,...event.data.json()}}catch(_){try{data.body=event.data.text()}catch(__){}}
- event.waitUntil(self.registration.showNotification(data.title,{body:data.body,icon:"./assets/icon-192.png",badge:"./assets/icon-192.png",tag:data.tag||("pst-"+(data.kind||"general")),data:{url:data.url||"./"}}));
+ event.waitUntil(self.registration.showNotification(data.title,{body:data.body,icon:"./icon-192.png",badge:"./icon-192.png",tag:data.tag||("pst-"+(data.kind||"general")),data:{url:data.url||"./"}}));
 });
 self.addEventListener("notificationclick",event=>{
  event.notification.close();

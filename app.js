@@ -1,5 +1,5 @@
 
-const APP_BUILD="V4.1.6";
+const APP_BUILD="V4.1.7";
 const cfg=window.APP_CONFIG||{};
 const sb = (cfg.SUPABASE_URL && !cfg.SUPABASE_URL.startsWith("INSERISCI"))
   ? supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY)
@@ -347,7 +347,7 @@ async function renderHome(){
    <div class="card"><h2>Stato gruppo oggi</h2><div class="stats">${stat("🔴 Controllo",critical)}${stat("🟠 Attenzione",watch)}${stat("🟢 Regolari",Math.max(0,aa.length-critical-watch))}</div></div></div>
    <div class="card"><div class="sectionTitle"><div><h2>Atleti da controllare oggi</h2><p class="muted">Alert operativi basati sui dati registrati.</p></div><button class="secondary" id="enableNotifyHome">🔔 Notifiche</button></div>
    <div class="alertGrid">${alertRows.map(x=>coachAlertCard(x.athlete,x.alerts)).join("")}</div></div>
-   <div class="dashboardHero card"><div><span class="eyebrow">PATRUNO SPEED TEAM</span><h2>Speed · Data · Progress</h2><p>Una vista unica per leggere carico, wellness e prestazione del gruppo.</p></div><img src="assets/hero.jpg" alt="Sprint Patruno Speed Team"></div>
+   <div class="dashboardHero card"><div><span class="eyebrow">PATRUNO SPEED TEAM</span><h2>Speed · Data · Progress</h2><p>Una vista unica per leggere carico, wellness e prestazione del gruppo.</p></div><img src="hero.jpg" alt="Sprint Patruno Speed Team"></div>
    ${dashboardAnalytics(aa,t||[],w||[],tr||[])}
    <div class="card"><h2>Carico totale registrato</h2><div class="kpi">${(t||[]).reduce((s,x)=>s+Number(x.session_load||0),0)} AU</div></div>`;
    document.querySelectorAll("[data-hist]").forEach(b=>b.onclick=async()=>{sessionStorage.setItem("historyAthlete",b.dataset.hist);activeTab="history";renderTabs();await render()});
@@ -549,7 +549,7 @@ async function showLocalNotification(title,body,tag){
  if(typeof window.Notification==="undefined"||window.Notification.permission!=="granted")return;
  try{
    const reg=await navigator.serviceWorker.ready;
-   await reg.showNotification(title,{body,tag,icon:"assets/icon-192.png",badge:"assets/icon-192.png",data:{url:"./"}});
+   await reg.showNotification(title,{body,tag,icon:"icon-192.png",badge:"icon-192.png",data:{url:"./"}});
  }catch(e){
    try{new window.Notification(title,{body,tag})}catch(_){}
  }
