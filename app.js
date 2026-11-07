@@ -1,5 +1,5 @@
 
-const APP_BUILD="V4.1.3";
+const APP_BUILD="V4.1.4";
 const cfg=window.APP_CONFIG||{};
 const sb = (cfg.SUPABASE_URL && !cfg.SUPABASE_URL.startsWith("INSERISCI"))
   ? supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY)
@@ -431,6 +431,22 @@ function urlBase64ToUint8Array(base64String){
  const raw=atob(base64);
  return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)));
 }
+
+function uint8ToBase64Url(u8){
+ if(!u8)return "";
+ let s="";
+ const a=new Uint8Array(u8);
+ for(const b of a)s+=String.fromCharCode(b);
+ return btoa(s).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+}
+function subscriptionUsesCurrentVapid(sub){
+ try{
+   const current=String(cfg.PUSH_VAPID_PUBLIC_KEY||"").replace(/=+$/,"");
+   const used=uint8ToBase64Url(sub?.options?.applicationServerKey);
+   return !!current && !!used && current===used;
+ }catch(_){return false}
+}
+
 async function getBrowserPushSubscription(){
  if(!("serviceWorker" in navigator) || !("PushManager" in window))return null;
  const timeout=new Promise(resolve=>setTimeout(()=>resolve(null),1500));
@@ -449,18 +465,36 @@ async function enableNotifications(){
  if(!cfg.PUSH_VAPID_PUBLIC_KEY){
    toast("Chiave push pubblica non configurata.");return false;
  }
+
  const permission=await window.Notification.requestPermission();
  localStorage.setItem("pamNotifications",permission);
- if(permission!=="granted"){toast("Notifiche non autorizzate");return false}
+ if(permission!=="granted"){
+   toast("Notifiche non autorizzate");return false;
+ }
+
  try{
    const reg=await navigator.serviceWorker.ready;
    let sub=await reg.pushManager.getSubscription();
+
+   if(sub && !subscriptionUsesCurrentVapid(sub)){
+     const oldEndpoint=sub.endpoint;
+     try{await sub.unsubscribe()}catch(_){}
+     try{
+       await sb.from("push_subscriptions")
+         .update({active:false,updated_at:new Date().toISOString()})
+         .eq("user_id",currentUser.id)
+         .eq("endpoint",oldEndpoint);
+     }catch(_){}
+     sub=null;
+   }
+
    if(!sub){
      sub=await reg.pushManager.subscribe({
        userVisibleOnly:true,
        applicationServerKey:urlBase64ToUint8Array(cfg.PUSH_VAPID_PUBLIC_KEY)
      });
    }
+
    const j=sub.toJSON();
    const {error}=await sb.from("push_subscriptions").upsert({
      user_id:currentUser.id,
@@ -471,12 +505,14 @@ async function enableNotifications(){
      active:true,
      updated_at:new Date().toISOString()
    },{onConflict:"user_id,endpoint"});
+
    if(error)throw error;
+
    toast("🔔 Push attivate su questo dispositivo");
    return true;
  }catch(e){
-   console.error(e);
-   toast("Errore attivazione push: "+(e.message||e));
+   console.error("enableNotifications",e);
+   toast("Errore attivazione push: "+(e?.message||String(e)));
    return false;
  }
 }
@@ -518,7 +554,11 @@ async function renderNotifications(){
  view.innerHTML=`<div class="card"><h2>🔔 Notifiche</h2><p class="muted">Caricamento centro notifiche…</p></div>`;
  const hasNotificationApi=typeof window.Notification!=="undefined";
  const canPush=hasNotificationApi&&("serviceWorker" in navigator)&&("PushManager" in window);
- let sub=null; try{sub=canPush?await getBrowserPushSubscription():null}catch(_){}
+ let sub=null;
+ try{
+   sub=canPush?await getBrowserPushSubscription():null;
+   if(sub && !subscriptionUsesCurrentVapid(sub))sub=null;
+ }catch(_){}
  let {data:pref,error:prefErr}=await sb.from("notification_preferences").select("*").eq("user_id",currentUser.id).maybeSingle();
  if(prefErr && !String(prefErr.message||"").includes("0 rows")){
    view.innerHTML=`<div class="card"><h2>🔔 Notifiche</h2><div class="note">${prefErr.message}<br><b>Esegui prima V3_9_UPGRADE.sql su Supabase.</b></div></div>`;return;
