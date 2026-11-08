@@ -397,3 +397,20 @@ body.reorderingBlocks{
 @media(max-width:700px){
   [data-delete-ath],[data-toggle-ath]{width:100%}
 }
+
+/* V4.1.8 — forza single-source + wellness dashboard */
+.strengthAutoSource{border-left:5px solid #7c3aed}
+.dashboardMissingWellness{
+  margin:12px 0 0;
+  padding:10px 12px;
+  background:#fff4e5;
+  border:1px solid #f1c27d;
+  border-radius:10px;
+}
+.dashboardWellnessComplete{
+  margin:12px 0 0;
+  padding:10px 12px;
+  background:#eefbf2;
+  border:1px solid #b9e3c5;
+  border-radius:10px;
+}

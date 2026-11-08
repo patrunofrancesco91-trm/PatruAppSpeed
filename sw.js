@@ -1,4 +1,4 @@
-const CACHE="pst-v417-sw-path-fix";
+const CACHE="pst-v418-strength-wellness";
 const STATIC=["./manifest.json","./logo.png","./hero.jpg","./icon-192.png","./icon-512.png","./favicon.png"];
 const CORE=["./","./index.html","./styles.css","./app.js","./config.js"];
 

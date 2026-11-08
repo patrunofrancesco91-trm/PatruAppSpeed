@@ -1,5 +1,5 @@
 
-const APP_BUILD="V4.1.7";
+const APP_BUILD="V4.1.8";
 const cfg=window.APP_CONFIG||{};
 const sb = (cfg.SUPABASE_URL && !cfg.SUPABASE_URL.startsWith("INSERISCI"))
   ? supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY)
@@ -312,6 +312,20 @@ async function athleteSelectHTML(id="athleteId"){
  const aa=await getAthletes();
  return `<label>Atleta<select id="${id}">${aa.map(a=>`<option value="${a.id}">${a.display_name}</option>`).join("")}</select></label>`;
 }
+
+function wellnessTodayForAthlete(wellnessRows,athleteId){
+ const today=localISODate();
+ return (wellnessRows||[])
+   .filter(x=>x.athlete_id===athleteId && effectiveWellDate(x)===today)
+   .sort((a,b)=>new Date(b.recorded_at||b.updated_at||0)-new Date(a.recorded_at||a.updated_at||0))[0]||null;
+}
+function wellnessCompletionSummary(athletes,wellnessRows){
+ const today=localISODate();
+ const completed=(athletes||[]).filter(a=>(wellnessRows||[]).some(w=>w.athlete_id===a.id && effectiveWellDate(w)===today));
+ const missing=(athletes||[]).filter(a=>!completed.some(c=>c.id===a.id));
+ return {today,completed,missing};
+}
+
 async function renderHome(){
  if(profile.role==="athlete"){
    const id=athleteProfile.id;
@@ -334,6 +348,7 @@ async function renderHome(){
     sb.from("test_results").select("id,athlete_id,mean_value,best_value,recorded_at,tests(name,unit,higher_better)").order("recorded_at",{ascending:true}),
     sb.from("races").select("id,athlete_id,result,race_date,race_types(name,unit)").order("race_date",{ascending:true})
    ]);
+   const wellnessToday=wellnessCompletionSummary(aa,w||[]);
    const alertRows=aa.map(a=>({athlete:a,alerts:buildAthleteAlerts(
       a,
       (w||[]).filter(x=>x.athlete_id===a.id),
@@ -344,7 +359,7 @@ async function renderHome(){
    const critical=alertRows.filter(x=>x.alerts.status==="red").length;
    const watch=alertRows.filter(x=>x.alerts.status==="orange").length;
    view.innerHTML=`<div class="grid two"><div class="card"><h2>${profile.role==="doctor"?"Dashboard medico sportivo":profile.role==="assistant_coach"?"Dashboard vice allenatore":"Dashboard allenatore"}</h2><div class="stats">${stat("Atleti",aa.length)}${stat("Allenamenti",t?.length||0)}${stat("Test",tr?.length||0)}${stat("Gare",r?.length||0)}</div></div>
-   <div class="card"><h2>Stato gruppo oggi</h2><div class="stats">${stat("🔴 Controllo",critical)}${stat("🟠 Attenzione",watch)}${stat("🟢 Regolari",Math.max(0,aa.length-critical-watch))}</div></div></div>
+   <div class="card"><h2>Wellness di oggi · ${fmtDate(wellnessToday.today)}</h2><div class="stats">${stat("✅ Compilati",`${wellnessToday.completed.length}/${aa.length}`)}${stat("⏳ Mancanti",wellnessToday.missing.length)}${stat("🔴 Controllo",critical)}${stat("🟠 Attenzione",watch)}</div>${wellnessToday.missing.length?`<p class="dashboardMissingWellness"><b>Mancano:</b> ${wellnessToday.missing.map(a=>a.display_name).join(", ")}</p>`:`<p class="dashboardWellnessComplete">✅ Wellness completato da tutti gli atleti attivi.</p>`}</div></div>
    <div class="card"><div class="sectionTitle"><div><h2>Atleti da controllare oggi</h2><p class="muted">Alert operativi basati sui dati registrati.</p></div><button class="secondary" id="enableNotifyHome">🔔 Notifiche</button></div>
    <div class="alertGrid">${alertRows.map(x=>coachAlertCard(x.athlete,x.alerts)).join("")}</div></div>
    <div class="dashboardHero card"><div><span class="eyebrow">PATRUNO SPEED TEAM</span><h2>Speed · Data · Progress</h2><p>Una vista unica per leggere carico, wellness e prestazione del gruppo.</p></div><img src="hero.jpg" alt="Sprint Patruno Speed Team"></div>
@@ -365,8 +380,8 @@ function dashboardAnalytics(aa,t,w,tr){
  const avgWell=recentW.length?avg(recentW.map(x=>Number(x.score||0))):0;
  return `<div class="grid two dashboardDataGrid">
    <div class="card"><div class="sectionTitle"><div><h2>Training Load · 14 giorni</h2><p class="muted">Carico totale del gruppo giorno per giorno.</p></div><button class="secondary" data-go-compare="training">Confronta</button></div>${simpleBarChart(Object.entries(byDay).map(([label,value])=>({label,value})),"","AU")}</div>
-   <div class="card"><div class="sectionTitle"><div><h2>Wellness · 7 giorni</h2><p class="muted">Media gruppo: <b>${avgWell.toFixed(1)}/20</b></p></div><button class="secondary" data-go-compare="wellness">Confronta</button></div>
-    <div class="tableWrap"><table><thead><tr><th>Atleta</th><th>Ultimo score</th><th>Dolore</th></tr></thead><tbody>${aa.map(a=>{const x=[...w].filter(q=>q.athlete_id===a.id).sort((a,b)=>new Date(effectiveWellDate(b))-new Date(effectiveWellDate(a)))[0];return `<tr><td><b>${a.display_name}</b></td><td>${x?`${x.score}/20`:"—"}</td><td>${x?.pain||"—"}</td></tr>`}).join("")}</tbody></table></div></div>
+   <div class="card"><div class="sectionTitle"><div><h2>Wellness · oggi</h2><p class="muted">La tabella mostra solo il Wellness riferito alla data odierna. Media 7 giorni gruppo: <b>${avgWell.toFixed(1)}/20</b></p></div><button class="secondary" data-go-compare="wellness">Confronta</button></div>
+    <div class="tableWrap"><table><thead><tr><th>Atleta</th><th>Stato</th><th>Score oggi</th><th>Dolore</th></tr></thead><tbody>${aa.map(a=>{const x=wellnessTodayForAthlete(w,a.id);return `<tr><td><b>${a.display_name}</b></td><td>${x?"✅ Compilato":"⏳ Mancante"}</td><td>${x?`${x.score}/20`:"—"}</td><td>${x?.pain||"—"}</td></tr>`}).join("")}</tbody></table></div></div>
    <div class="card"><div class="sectionTitle"><div><h2>Ultimi allenamenti</h2><p class="muted">Confrontabili direttamente nella nuova area Confronti.</p></div><button class="secondary" data-go-compare="training">Apri confronti</button></div>
     <div class="tableWrap"><table><thead><tr><th>Atleta</th><th>Data</th><th>Seduta</th><th>Durata</th><th>sRPE</th><th>TL</th></tr></thead><tbody>${[...t].slice(-12).reverse().map(x=>`<tr><td>${athleteNameById(aa,x.athlete_id)}</td><td>${fmtDate(effectiveTrainingDate(x))}</td><td>${x.training_types?.name||"—"}</td><td>${x.duration_min}′</td><td>${x.srpe}</td><td><b>${x.session_load} AU</b></td></tr>`).join("")||'<tr><td colspan="6">Nessun dato</td></tr>'}</tbody></table></div></div>
    <div class="card"><div class="sectionTitle"><div><h2>Ultimi test</h2><p class="muted">Risultati recenti del gruppo.</p></div><button class="secondary" data-go-compare="tests">Confronta</button></div>
@@ -2540,34 +2555,122 @@ async function drawSprintPerformance(id){
  <p class="note"><b>Importante:</b> dalla V3.6 Performance non richiede più il doppio inserimento del volume. Per i lavori specifici usa i blocchi strutturati dentro Allenamento.</p>`;
 }
 async function drawStrengthPerformance(id){
- const [{data},{data:customOptions}]=await Promise.all([
-   sb.from("strength_log").select("*").eq("athlete_id",id).order("session_date",{ascending:true}),
-   sb.from("custom_options").select("*").eq("section","strength_quality").eq("active",true).order("name")
- ]);
- const fields=await getCustomFields("strength");
- const qualities=[...STRENGTH_QUALITIES,...(customOptions||[]).map(x=>x.name).filter(n=>!STRENGTH_QUALITIES.includes(n))];
- const all=data||[], recent=all.filter(x=>parseDateLocal(x.session_date)>=daysAgo(30));
- const vol=recent.reduce((s,x)=>s+Number(x.volume_load||0),0);
- const byQ={};recent.forEach(x=>byQ[x.quality]=(byQ[x.quality]||0)+Number(x.volume_load||0));
- const editForm=profile.role==="doctor"?"":`<div class="card innerCard"><h3>Registra lavoro di forza</h3><form id="strengthForm">
-  <label>Data<input type="date" id="stDate" value="${isoDateToday()}" required></label>
-  <label>Qualità<select id="stQuality">${qualities.map(x=>`<option>${x}</option>`).join("")}</select></label>
-  <label>Esercizio<input id="stExercise" placeholder="Squat, hip thrust, Nordic..." required></label>
-  <div class="grid three"><label>Serie<input type="number" id="stSets" min="1" required></label><label>Ripetizioni<input type="number" id="stReps" min="1" required></label><label>Carico kg<input type="number" id="stLoad" min="0" step="0.5" value="0"></label></div>
-  ${renderCustomFields(fields,"stcf")}
-  <label>Note<textarea id="stNotes" placeholder="%1RM, velocità, variante, recupero..."></textarea></label>
-  <button class="primary">Salva forza</button>
- </form></div>`;
- $("#perfBody").innerHTML=`<div class="grid two">${editForm}
- <div class="card innerCard"><h3>Ultimi 30 giorni</h3><div class="stats">${stat("Esercizi",recent.length)}${stat("Volume-load",`${Math.round(vol)} kg`)}</div>
- ${simpleBarChart(Object.entries(byQ).filter(([,v])=>v>0).map(([label,value])=>({label,value})),"Volume-load per qualità","kg")}</div></div>
- <p class="note"><b>Nota sport science:</b> il volume-load (serie × ripetizioni × kg) è utile soprattutto per esercizi esterni caricati. Nordic, pliometria e lavori balistici vanno interpretati anche qualitativamente e non ridotti al solo tonnellaggio.</p>
- <div class="tableWrap historyGrid"><table><thead><tr><th>Data</th><th>Qualità</th><th>Esercizio</th><th>Serie×rep</th><th>Carico</th><th>Volume-load</th><th>Campi extra</th><th>Note</th></tr></thead><tbody>${all.slice().reverse().map(x=>`<tr><td>${x.session_date}</td><td><b>${x.quality}</b></td><td>${x.exercise}</td><td>${x.sets}×${x.reps}</td><td>${x.load_kg||0} kg</td><td>${Math.round(Number(x.volume_load||0))} kg</td><td>${customExtrasHTML(x.extras,fields)}</td><td>${x.notes||"—"}</td></tr>`).join("")||'<tr><td colspan="8">Nessun lavoro di forza registrato</td></tr>'}</tbody></table></div>`;
- if($("#strengthForm")) $("#strengthForm").onsubmit=async e=>{
-  e.preventDefault();
-  const {error}=await sb.from("strength_log").insert({athlete_id:id,session_date:$("#stDate").value,quality:$("#stQuality").value,exercise:$("#stExercise").value.trim(),sets:+$("#stSets").value,reps:+$("#stReps").value,load_kg:+$("#stLoad").value,extras:collectCustomFields(fields,"stcf"),notes:$("#stNotes").value});
-  if(error)return toast(error.message);toast("Lavoro di forza salvato");await drawStrengthPerformance(id);
- };
+ const {data:trainings,error}=await sb.from("trainings")
+   .select("id,athlete_id,training_date,training_types(name),training_blocks(*)")
+   .eq("athlete_id",id)
+   .order("training_date",{ascending:true});
+
+ if(error){
+   $("#perfBody").innerHTML=`<div class="note">${error.message}</div>`;
+   return;
+ }
+
+ const rows=[];
+ for(const t of trainings||[]){
+   for(const b of t.training_blocks||[]){
+     if((b.block_kind||"run")!=="strength")continue;
+
+     const sets=Math.max(0,Number(b.sets||0));
+     const load=Math.max(0,Number(b.load_kg||0));
+
+     let repsArray=[];
+     if(Array.isArray(b.completed_reps_per_set)){
+       repsArray=b.completed_reps_per_set.map(Number).filter(Number.isFinite);
+     }else if(Array.isArray(b.reps_per_set)){
+       repsArray=b.reps_per_set.map(Number).filter(Number.isFinite);
+     }
+
+     const fallbackReps=Math.max(0,Number(b.completed_reps||b.planned_reps||0));
+     const totalReps=repsArray.length
+       ? repsArray.reduce((s,x)=>s+Math.max(0,x),0)
+       : sets*fallbackReps;
+
+     const tonnage=load*totalReps;
+
+     rows.push({
+       date:t.training_date,
+       training:t.training_types?.name||"Allenamento",
+       exercise:b.exercise||b.quality||"Forza",
+       quality:b.quality||"Forza",
+       sets,
+       repsArray,
+       fallbackReps,
+       totalReps,
+       load,
+       tonnage,
+       notes:b.notes||"",
+       training_id:t.id
+     });
+   }
+ }
+
+ const d30=daysAgo(30);
+ const recent=rows.filter(x=>parseDateLocal(x.date)>=d30);
+ const total30=recent.reduce((s,x)=>s+x.tonnage,0);
+ const sessions30=new Set(recent.map(x=>x.training_id)).size;
+
+ const byExercise={};
+ recent.forEach(x=>byExercise[x.exercise]=(byExercise[x.exercise]||0)+x.tonnage);
+
+ const byDay={};
+ recent.forEach(x=>byDay[x.date]=(byDay[x.date]||0)+x.tonnage);
+
+ const fmtReps=x=>x.repsArray.length
+   ? x.repsArray.join("+")
+   : `${x.sets}×${x.fallbackReps}`;
+
+ $("#perfBody").innerHTML=`
+ <div class="card innerCard strengthAutoSource">
+   <div class="sectionTitle">
+     <div>
+       <h3>Forza · dati automatici dagli allenamenti</h3>
+       <p class="muted">Nessun doppio inserimento: serie, ripetizioni, carico e tonnellaggio sono letti dai blocchi Forza registrati nella sezione Allenamento.</p>
+     </div>
+     <span class="badge redBadge">AUTO</span>
+   </div>
+   <div class="stats">
+     ${stat("Sedute forza · 30 gg",sessions30)}
+     ${stat("Blocchi forza · 30 gg",recent.length)}
+     ${stat("Tonnellaggio · 30 gg",`${Math.round(total30)} kg`)}
+     ${stat("Media/seduta",sessions30?`${Math.round(total30/sessions30)} kg`:"—")}
+   </div>
+ </div>
+
+ <div class="grid two">
+   <div class="card innerCard">
+     <h3>Tonnellaggio per esercizio · 30 giorni</h3>
+     ${simpleBarChart(Object.entries(byExercise).filter(([,v])=>v>0).map(([label,value])=>({label,value})),"","kg")}
+   </div>
+   <div class="card innerCard">
+     <h3>Tonnellaggio per seduta · 30 giorni</h3>
+     ${simpleBarChart(Object.entries(byDay).map(([label,value])=>({label:fmtDate(label),value})),"","kg")}
+   </div>
+ </div>
+
+ <p class="note"><b>Calcolo:</b> kg × ripetizioni effettivamente completate. Se inserisci le ripetizioni per singola serie, il tonnellaggio usa la loro somma; altrimenti usa serie × ripetizioni effettive. Nordic, pliometria e lavori a corpo libero restano descrittivi quando il carico esterno è 0 kg.</p>
+
+ <div class="card innerCard">
+   <div class="sectionTitle">
+     <div><h3>Storico forza</h3><p class="muted">Fonte unica: blocchi Forza degli allenamenti svolti.</p></div>
+   </div>
+   <div class="tableWrap historyGrid">
+     <table>
+       <thead><tr><th>Data</th><th>Seduta</th><th>Esercizio</th><th>Serie / rep effettive</th><th>Carico</th><th>Rep totali</th><th>Tonnellaggio</th><th>Note</th></tr></thead>
+       <tbody>
+       ${rows.slice().reverse().map(x=>`<tr>
+         <td>${fmtDate(x.date)}</td>
+         <td>${x.training}</td>
+         <td><b>${x.exercise}</b></td>
+         <td>${fmtReps(x)}</td>
+         <td>${x.load} kg</td>
+         <td>${x.totalReps}</td>
+         <td><b>${Math.round(x.tonnage)} kg</b></td>
+         <td>${x.notes||"—"}</td>
+       </tr>`).join("")||'<tr><td colspan="8">Nessun blocco Forza registrato negli allenamenti.</td></tr>'}
+       </tbody>
+     </table>
+   </div>
+ </div>`;
 }
 
 async function drawTestProfile(id){
